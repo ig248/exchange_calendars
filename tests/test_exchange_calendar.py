@@ -786,11 +786,11 @@ class ExchangeCalendarTestBase(object):
         second_session_label = self.calendar.schedule.index[second_idx]
 
         answer_key = self.calendar.schedule.index[first_idx : second_idx + 1]
-
-        np.testing.assert_array_equal(
-            answer_key,
-            self.calendar.sessions_in_range(first_session_label, second_session_label),
+        rtrn = self.calendar.sessions_in_range(
+            first_session_label, second_session_label, _parse=False
         )
+
+        np.testing.assert_array_equal(answer_key, rtrn)
 
     def get_session_block(self):
         """
@@ -893,13 +893,15 @@ class ExchangeCalendarTestBase(object):
         sessions = self.get_session_block()
 
         np.testing.assert_array_equal(
-            self.calendar.sessions_window(sessions[0], len(sessions) - 1),
-            self.calendar.sessions_in_range(sessions[0], sessions[-1]),
+            self.calendar.sessions_window(sessions[0], len(sessions) - 1, _parse=False),
+            self.calendar.sessions_in_range(sessions[0], sessions[-1], _parse=False),
         )
 
         np.testing.assert_array_equal(
-            self.calendar.sessions_window(sessions[-1], -1 * (len(sessions) - 1)),
-            self.calendar.sessions_in_range(sessions[0], sessions[-1]),
+            self.calendar.sessions_window(
+                sessions[-1], -1 * (len(sessions) - 1), _parse=False
+            ),
+            self.calendar.sessions_in_range(sessions[0], sessions[-1], _parse=False),
         )
 
     def test_session_distance(self):
@@ -908,18 +910,21 @@ class ExchangeCalendarTestBase(object):
         forward_distance = self.calendar.session_distance(
             sessions[0],
             sessions[-1],
+            _parse=False,
         )
         self.assertEqual(forward_distance, len(sessions))
 
         backward_distance = self.calendar.session_distance(
             sessions[-1],
             sessions[0],
+            _parse=False,
         )
         self.assertEqual(backward_distance, -len(sessions))
 
         one_day_distance = self.calendar.session_distance(
             sessions[0],
             sessions[0],
+            _parse=False,
         )
         self.assertEqual(one_day_distance, 1)
 
@@ -2188,6 +2193,28 @@ class Answers:
         return all_dates.difference(self.sessions)
 
     @property
+    def sessions_range_defined_by_non_sessions(
+        self,
+    ) -> tuple[tuple[pd.Timestamp, pd.Timestamp], pd.Datetimeindex] | None:
+        """Range containing sessions although defined with non-sessions.
+
+        Returns
+        -------
+        tuple[tuple[pd.Timestamp, pd.Timestamp], pd.Datetimeindex]:
+            [0] tuple[pd.Timestamp, pd.Timestamp]:
+                [0] range start as non-session date.
+                [1] range end as non-session date.
+            [1] pd.DatetimeIndex:
+                Sessions in range.
+        """
+        non_sessions = self.non_sessions
+        if non_sessions.empty:
+            return None
+        start, end = non_sessions[0], non_sessions[-1]
+        slice_start, slice_end = self.sessions.searchsorted((start, end))
+        return (start, end), self.sessions[slice_start:slice_end]
+
+    @property
     def non_sessions_run(self) -> pd.DatetimeIndex:
         """Longest run of non_sessions."""
         ser = self.sessions.to_series()
@@ -2205,6 +2232,15 @@ class Answers:
         assert run[0] > self.first_session
         assert run[-1] < self.last_session
         return run
+
+    @property
+    def non_sessions_range(self) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+        """Longest range covering a period without a session."""
+        non_sessions_run = self.non_sessions_run
+        if non_sessions_run.empty:
+            return None
+        else:
+            return self.non_sessions_run[0], self.non_sessions_run[-1]
 
     # method-specific inputs/outputs
 
@@ -3188,6 +3224,30 @@ class ExchangeCalendarTestBaseProposal:
 
     # Tests for methods that evaluate or interrogate a range of sessions.
 
+    def test_sessions_in_range(self, default_calendar_with_answers):
+        cal, ans = default_calendar_with_answers
+        m = cal.sessions_in_range
+
+        # test where start and end are sessions
+        start, end = ans.sessions[10], ans.sessions[-10]
+        tm.assert_index_equal(m(start, end, _parse=False), ans.sessions[10:-9])
+
+        # test session blocks
+        for _, block in ans.session_block_generator():
+            tm.assert_index_equal(m(block[0], block[-1], _parse=False), block)
+
+        # tests where start and end are non-session dates
+        non_sessions = ans.non_sessions
+        if not non_sessions.empty:
+            # test that range within which there are no sessions returns empty
+            non_sessions_run = ans.non_sessions_run
+            start, end = non_sessions_run[0], non_sessions_run[-1]
+            assert m(start, end, _parse=False).empty
+
+            # test range defined with start and end as non-sessions
+            (start, end), sessions = ans.sessions_range_defined_by_non_sessions
+            tm.assert_index_equal(m(start, end, _parse=False), sessions)
+
     def test_minutes_for_sessions_in_range(self, all_calendars_with_answers):
         cal, ans = all_calendars_with_answers
         m = cal.minutes_for_sessions_in_range
@@ -3197,3 +3257,48 @@ class ExchangeCalendarTestBaseProposal:
             ans_minutes = block_minutes[name]
             cal_minutes = m(block[0], block[-1], _parse=False)
             tm.assert_index_equal(ans_minutes, cal_minutes)
+
+    def test_sessions_window(self, default_calendar_with_answers):
+        cal, ans = default_calendar_with_answers
+        m = cal.sessions_window
+
+        for _, block in ans.session_block_generator():
+            count = len(block) - 1
+            tm.assert_index_equal(m(block[0], count, _parse=False), block)
+            tm.assert_index_equal(m(block[-1], -count, _parse=False), block)
+
+        # window starts on first calendar session
+        assert m(ans.sessions[2], count=-2, _parse=False)[0] == ans.first_session
+        # window would start before first calendar session
+        with pytest.raises(ValueError):
+            m(ans.sessions[2], count=-3, _parse=False)
+
+        # window ends on last calendar session
+        assert m(ans.sessions[-3], count=2, _parse=False)[-1] == ans.last_session
+        # window would end after last calendar session
+        with pytest.raises(ValueError):
+            m(ans.sessions[-3], count=3, _parse=False)
+
+    def test_session_distance(self, default_calendar_with_answers):
+        cal, ans = default_calendar_with_answers
+        m = cal.session_distance
+
+        for _, block in ans.session_block_generator():
+            distance = len(block)
+            assert m(block[0], block[-1]) == distance
+            assert m(block[-1], block[0]) == -distance
+
+        # test for same start / end
+        assert m(ans.sessions[0], ans.sessions[0], _parse=False) == 1
+
+        # tests where start and end are non-session dates
+        non_sessions = ans.non_sessions
+        if not non_sessions.empty:
+            # test that range within which there are no sessions returns 0
+            non_sessions_run = ans.non_sessions_run
+            start, end = non_sessions_run[0], non_sessions_run[-1]
+            assert m(start, end, _parse=False) == 0
+
+            # test range defined with start and end as non_sessions
+            (start, end), sessions = ans.sessions_range_defined_by_non_sessions
+            assert m(start, end, _parse=False) == len(sessions)

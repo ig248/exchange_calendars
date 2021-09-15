@@ -1137,7 +1137,7 @@ class ExchangeCalendar(ABC):
         numpy_bool = minute == self.all_minutes_nanos[idx]
         return bool(numpy_bool)
 
-    def is_break_minute(self, minute: pd.Timestamp, _parse: bool = True) -> bool:
+    def is_break_minute(self, minute: Minute, _parse: bool = True) -> bool:
         """Query if a given minute is within a break.
 
         Note: `self.side` determines whether either, both or one of break
@@ -1592,94 +1592,119 @@ class ExchangeCalendar(ABC):
 
     # Methods that evaluate or interrogate a range of sessions.
 
-    def sessions_in_range(self, start_session_label, end_session_label):
-        """
-        Given start and end session labels, return all the sessions in that
-        range, inclusive.
+    def sessions_in_range(
+        self, start_session_label: Date, end_session_label: Date, _parse: bool = True
+    ) -> pd.DatetimeIndex:
+        """Return sessions within a given range.
 
         Parameters
         ----------
-        start_session_label: pd.Timestamp (midnight UTC)
-            The label representing the first session of the desired range.
+        start_session_label
+            Date from which (and inclusive of) to include sessions in
+            range.
 
-        end_session_label: pd.Timestamp (midnight UTC)
-            The label representing the last session of the desired range.
+        end_session_label
+            Date through which (and inclusive of) to include sessions in
+            range.
 
         Returns
         -------
         pd.DatetimeIndex
-            The desired sessions.
+            Sessions from `start_session_label` through `end_session_label`.
         """
-        return self.all_sessions[
-            self.all_sessions.slice_indexer(start_session_label, end_session_label)
-        ]
+        if _parse:
+            start_session_label = parse_date(
+                start_session_label,
+                "start_session_label",
+                raise_oob=True,
+                calendar=self,
+            )
+            end_session_label = parse_date(
+                end_session_label,
+                "end_session_label",
+                raise_oob=True,
+                calendar=self,
+            )
+        indexer = self.all_sessions.slice_indexer(
+            start_session_label, end_session_label
+        )
+        return self.all_sessions[indexer]
 
-    def sessions_window(self, session_label: Session, count: int) -> pd.DatetimeIndex:
-        """
-        Given a session label and a window size, returns a list of sessions
-        of size `count` + 1, that either starts with the given session
-        (if `count` is positive) or ends with the given session (if `count` is
-        negative).
+    def sessions_window(
+        self, session_label: Session, count: int, _parse: bool = True
+    ) -> pd.DatetimeIndex:
+        """Return block of given size of consecutive sessions.
 
         Parameters
         ----------
         session_label
-            The label of the initial session.
+            Session representing the first (if `count` positive) or last
+            (if `count` negative) session of session block.
 
-        count: int
-            Defines the length and the direction of the window.
-
-        Returns
-        -------
-        pd.DatetimeIndex
-            The desired sessions.
+        count
+            Number of sessions to include in block in addition to
+                `session_label` (i.e. 0 will return block of length 1 with
+                `session_label` as only value).
+            Positive to return block of sessions from `session_label`
+            Negative to return block of sessions to `session_label`.
         """
-        session_label = parse_session(self, session_label, "session_label")
-        start_idx = self.schedule.index.get_loc(session_label)
+        if _parse:
+            session_label = parse_session(self, session_label, "session_label")
+        start_idx = self.all_sessions.get_loc(session_label)
         end_idx = start_idx + count
-        end_idx = max(0, end_idx)
+        if end_idx < 0:
+            raise ValueError(
+                f"Sessions window cannot begin before the first calendar session"
+                f" ({self.first_session}). `count` cannot be lower than"
+                f" {count - end_idx} for `session` '{session_label}'."
+            )
+        elif end_idx >= len(self.all_sessions):
+            raise ValueError(
+                f"Sessions window cannot end after the last calendar session"
+                f" ({self.last_session}). `count` cannot be higher than"
+                f" {count - (end_idx - len(self.all_sessions) + 1)} for"
+                f" `session` '{session_label}'."
+            )
         return self.all_sessions[min(start_idx, end_idx) : max(start_idx, end_idx) + 1]
 
     def session_distance(
         self,
-        start_session_label: pd.Timestamp,
-        end_session_label: pd.Timestamp,
-    ):
-        """
-        Given a start and end session label, returns the distance between them.
-        For example, for three consecutive sessions Mon., Tues., and Wed,
-        ``session_distance(Mon, Wed)`` returns 3. If ``start_session`` is after
-        ``end_session``, the value will be negated.
+        start_session_label: Date,
+        end_session_label: Date,
+        _parse: bool = True,
+    ) -> int:
+        """Return the number of sessions between two dates.
 
         Parameters
         ----------
-        start_session_label: pd.Timestamp
-            The label of the start session.
-        end_session_label: pd.Timestamp
-            The label of the ending session inclusive.
+        start_session_label
+            Date from which (inclusive) to evaluate distance.
+
+        end_session_label
+            Date through which (inclusive) to evaluate distance.
 
         Returns
         -------
         int
-            The distance between the two sessions.
+            Number of sessions between `start_session_label` and
+            `end_session_label` (both inclusive). If `start_session` is
+            after `end_session` then return will be negated.
         """
-        negate = end_session_label < start_session_label
-        if negate:
-            start_session_label, end_session_label = (
-                end_session_label,
-                start_session_label,
+        # out-of-bounds dates handled via parsing
+        if _parse:
+            start_session = parse_date(
+                start_session_label, "start_session_label", True, self
             )
-        start_idx = self.all_sessions.searchsorted(start_session_label)
-        end_idx = self.all_sessions.searchsorted(
-            end_session_label,
-            side="right",
-        )
+            end_session = parse_date(end_session_label, "end_session_label", True, self)
+        else:
+            start_session, end_session = start_session_label, end_session_label
 
-        out = end_idx - start_idx
+        negate = end_session < start_session
         if negate:
-            out = -out
-
-        return out
+            start_session, end_session = end_session, start_session
+        start_idx = self.all_sessions.searchsorted(start_session)
+        end_idx = self.all_sessions.searchsorted(end_session, side="right")
+        return start_idx - end_idx if negate else end_idx - start_idx
 
     def minutes_for_sessions_in_range(
         self,
