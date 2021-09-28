@@ -1,6 +1,7 @@
 from __future__ import annotations
 import typing
 import datetime
+import contextlib
 
 import numpy as np
 import pandas as pd
@@ -357,3 +358,240 @@ def parse_session(
     if ts not in calendar.schedule.index:
         raise errors.NotSessionError(calendar, ts, param_name)
     return ts
+
+
+class _TradingIndex:
+    """Create a trading index.
+
+    Credit to @Stryder-Git at pandas_market_calendars for showing the way
+    with a vectorised solution to creating trading indices.
+
+    Parameters
+    ----------
+    All parameters as ExchangeCalendar.trading_index
+    """
+
+    def __init__(
+        self,
+        calendar: ExchangeCalendar,
+        start: Date,
+        end: Date,
+        period: pd.Timedelta,
+        closed: str,  # Literal["left", "right", "both", "neither"] when min python 3.8
+        force_close: bool,
+        force_break_close: bool,
+        curtail_overlaps: bool,
+    ):
+        self.closed = closed
+        self.force_break_close = force_break_close
+        self.force_close = force_close
+        self.curtail_overlaps = curtail_overlaps
+
+        # get session bound values over requested range
+        slice_start = calendar.all_sessions.searchsorted(start)
+        slice_end = calendar.all_sessions.searchsorted(end, side="right")
+        slce = slice(slice_start, slice_end)
+
+        self.interval_nanos = period.value
+        self.dtype = np.int64 if self.interval_nanos < 3000000000 else np.int32
+
+        self.opens = calendar.market_opens_nanos[slce]
+        self.closes = calendar.market_closes_nanos[slce]
+        self.break_starts = calendar.market_break_starts_nanos[slce]
+        self.break_ends = calendar.market_break_ends_nanos[slce]
+
+        self.mask = self.break_starts != pd.NaT.value  # break mask
+        self.has_break = self.mask.any()
+
+        self.defaults = {
+            "closed": self.closed,
+            "force_close": self.force_close,
+            "force_break_close": self.force_break_close,
+        }
+
+    @property
+    def closed_right(self) -> bool:
+        return self.closed in ["right", "both"]
+
+    @property
+    def closed_left(self) -> bool:
+        return self.closed in ["left", "both"]
+
+    def verify_non_overlapping(self):
+        """Raise IndicesOverlapError if indices will overlap."""
+        if not self.closed_right:
+            return
+
+        def _check(
+            start_nanos: np.ndarray, end_nanos: np.ndarray, next_start_nanos: np.ndarray
+        ):
+            """Raise IndicesOverlap Error if indices would overlap.
+
+            `next_start_nanos` describe start of (sub)session that follows and could
+            overlap with (sub)session described by `start_nanos` and `end_nanos`.
+
+            All inputs should be of same length.
+            """
+            num_intervals = np.ceil((end_nanos - start_nanos) / self.interval_nanos)
+            right = start_nanos + num_intervals * self.interval_nanos
+            if self.closed == "right" and (right > next_start_nanos).any():
+                raise errors.IndicesOverlapError()
+            if self.closed == "both" and (right >= next_start_nanos).any():
+                raise errors.IndicesOverlapError()
+
+        if self.has_break:
+            if not self.force_break_close:
+                _check(
+                    self.opens[self.mask],
+                    self.break_starts[self.mask],
+                    self.break_ends[self.mask],
+                )
+
+        if not self.force_close:
+            opens, closes, next_opens = (
+                self.opens[:-1],
+                self.closes[:-1],
+                self.opens[1:],
+            )
+            _check(opens, closes, next_opens)
+            if self.has_break:
+                mask = self.mask[:-1]
+                _check(self.break_ends[:-1][mask], closes[mask], next_opens[mask])
+
+    def _create_index_for_sessions(
+        self,
+        start_nanos: np.ndarray,
+        end_nanos: np.ndarray,
+        force_close: bool,
+    ) -> np.ndarray:
+        """Create nano array of indices for sessions of given bounds."""
+        if start_nanos.size == 0:
+            return start_nanos
+
+        # evaluate number of indices for each session
+        num_intervals = (end_nanos - start_nanos) / self.interval_nanos
+        num_indices = np.ceil(num_intervals).astype("int")
+
+        if force_close:
+            if self.closed_right:
+                on_freq = (num_intervals == num_indices).all()
+                if not on_freq:
+                    num_indices -= 1  # add the close later
+            else:
+                on_freq = False
+
+        if self.closed == "both":
+            num_indices += 1
+        elif self.closed == "neither":
+            num_indices -= 1
+
+        # by session, evaluate a range of int such that indices of a session
+        # could be evaluted from [ session_open + (freq * i) for i in range ]
+        start = 0 if self.closed_left else 1
+        func = np.vectorize(lambda stop: np.arange(start, stop), otypes=[np.ndarray])
+        stop = num_indices if self.closed_left else num_indices + 1
+        ranges = np.concatenate(func(stop), axis=0, dtype=self.dtype)
+
+        # evaluate index as nano array
+        base = start_nanos.repeat(num_indices)
+        index = base + ranges * self.interval_nanos
+
+        if force_close and not on_freq:
+            index = np.concatenate((index, end_nanos))
+            index.sort()
+
+        return index
+
+    def _trading_index(self) -> np.ndarray:
+        """Create trading index as nano array.
+
+        Notes
+        -----
+        If `self.has_break` then index is returned UNSORTED. Why?
+        Returning unsorted allows `trading_index_intervals` to create
+        indices for the left and right sides and then arrange the right
+        in the same order as the sorted left. Although as required, there
+        are rare circumstances in which the resulting right side will not
+        be in ascending order (it will later be curtailed or an error
+        raised). This can happen when, for example, a calendar has breaks,
+        `force_break_close` is False although `force_close` is True and the
+        period is sufficiently long that the right side of the last
+        interval of a morning subsession exceeds the day close, i.e.
+        exceeds the right side of the subsequent interval. In these cases,
+        sorting the right index by value would result in the indices
+        becoming unsynced with the corresponding left indices.
+        """
+        if self.has_break:
+
+            # sessions with breaks
+            index_am = self._create_index_for_sessions(
+                self.opens[self.mask],
+                self.break_starts[self.mask],
+                self.force_break_close,
+            )
+
+            index_pm = self._create_index_for_sessions(
+                self.break_ends[self.mask], self.closes[self.mask], self.force_close
+            )
+
+            # sessions without a break
+            index_day = self._create_index_for_sessions(
+                self.opens[~self.mask], self.closes[~self.mask], self.force_close
+            )
+
+            # put it all together
+            index = np.concatenate((index_am, index_pm, index_day))
+
+        else:
+            index = self._create_index_for_sessions(
+                self.opens, self.closes, self.force_close
+            )
+
+        return index
+
+    def trading_index(self) -> pd.DatetimeIndex:
+        """Create trading index as a DatetimeIndex."""
+        self.verify_non_overlapping()
+        index = self._trading_index()
+        if self.has_break:
+            index.sort()
+        return pd.DatetimeIndex(index, tz="UTC")
+
+    @contextlib.contextmanager
+    def _override_defaults(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        yield
+        for k, v in self.defaults.items():
+            setattr(self, k, v)
+
+    def trading_index_intervals(self) -> pd.IntervalIndex:
+        """Create trading index as a pd.IntervalIndex."""
+        with self._override_defaults(
+            closed="left", force_close=False, force_break_close=False
+        ):
+            left = self._trading_index()
+
+        if not (self.force_close or self.force_break_close):
+            if self.has_break:
+                left.sort()
+            right = left + self.interval_nanos
+        else:
+            with self._override_defaults(closed="right"):
+                right = self._trading_index()
+            if self.has_break:
+                # See _trading_index.__doc__ for note on what's going on here.
+                indices = left.argsort()
+                left.sort()
+                right = right[indices]
+
+        overlaps_next = right[:-1] > left[1:]
+        if overlaps_next.any():
+            if self.curtail_overlaps:
+                right[:-1][overlaps_next] = left[1:][overlaps_next]
+            else:
+                raise errors.IntervalsOverlapError()
+
+        left = pd.DatetimeIndex(left, tz="UTC")
+        right = pd.DatetimeIndex(right, tz="UTC")
+        return pd.IntervalIndex.from_arrays(left, right, self.closed)

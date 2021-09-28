@@ -30,11 +30,7 @@ from exchange_calendars.calendar_utils import (
     _default_calendar_aliases,
     _default_calendar_factories,
 )
-from exchange_calendars.errors import (
-    CalendarNameCollision,
-    InvalidCalendarName,
-    NoSessionsError,
-)
+from exchange_calendars import errors
 from exchange_calendars.exchange_calendar import ExchangeCalendar, days_at_time
 from .test_utils import T
 
@@ -68,12 +64,12 @@ class TestCalendarRegistration:
         assert dummy_cal == retr_cal
 
         # Try to register again, expecting a name collision
-        with pytest.raises(CalendarNameCollision):
+        with pytest.raises(errors.CalendarNameCollision):
             dispatcher.register_calendar("DMY", dummy_cal)
 
         # Deregister the calendar and ensure that it is removed
         dispatcher.deregister_calendar("DMY")
-        with pytest.raises(InvalidCalendarName):
+        with pytest.raises(errors.InvalidCalendarName):
             dispatcher.get_calendar("DMY")
 
     def test_register_calendar_type(self, dispatcher, dummy_cal_type):
@@ -84,7 +80,7 @@ class TestCalendarRegistration:
     def test_both_places_are_checked(self, dispatcher, dummy_cal):
         # if instance is registered, can't register type with same name
         dispatcher.register_calendar("DMY", dummy_cal)
-        with pytest.raises(CalendarNameCollision):
+        with pytest.raises(errors.CalendarNameCollision):
             dispatcher.register_calendar_type("DMY", type(dummy_cal))
 
         dispatcher.deregister_calendar("DMY")
@@ -92,7 +88,7 @@ class TestCalendarRegistration:
         # if type is registered, can't register instance with same name
         dispatcher.register_calendar_type("DMY", type(dummy_cal))
 
-        with pytest.raises(CalendarNameCollision):
+        with pytest.raises(errors.CalendarNameCollision):
             dispatcher.register_calendar("DMY", dummy_cal)
 
     def test_force_registration(self, dispatcher, dummy_cal_type):
@@ -340,6 +336,33 @@ class Answers:
                 dtis.append(pd.date_range(first_pm, last, freq="T"))
 
         return dtis[0].union_many(dtis[1:])
+
+    def get_session_minutes(
+        self, session: pd.Timestamp
+    ) -> tuple[pd.DatetimeIndex, ...]:
+        """Get trading minutes a single `session`.
+
+        Returns
+        -------
+        tuple[pd.DatetimeIndex, ...]
+            If `session` has a break, returns 2-tuple where:
+                [0] minutes of am session.
+                [1] minutes of pm session.
+            If `session` does not have a break, returns 1-tuple with
+            element holding minutes of session.
+        """
+        first = self.first_minutes[session]
+        last = self.last_minutes[session]
+        last_am = self.last_am_minutes[session]
+        first_pm = self.first_pm_minutes[session]
+
+        if pd.isna(last_am):
+            return (pd.date_range(first, last, freq="T"),)
+        else:
+            return (
+                pd.date_range(first, last_am, freq="T"),
+                pd.date_range(first_pm, last, freq="T"),
+            )
 
     # --- Evaluated general calendar properties ---
 
@@ -2010,7 +2033,9 @@ class ExchangeCalendarTestBase:
     def test_base_integrity(self, calendar_cls, non_valid_overrides):
         cls = calendar_cls
         for name in non_valid_overrides:
-            assert getattr(cls, name) == getattr(ExchangeCalendar, name)
+            on_cls, on_base = getattr(cls, name), getattr(ExchangeCalendar, name)
+            # covers properties, instance methods and class mathods...
+            assert (on_cls == on_base or on_cls.__qualname__ == on_base.__qualname__)
 
     def test_calculated_against_csv(self, default_calendar_with_answers):
         calendar, ans = default_calendar_with_answers
@@ -2063,7 +2088,7 @@ class ExchangeCalendarTestBase:
                 f" there would be no sessions between the requested `start` ('{start}')"
                 f" and `end` ('{end}') dates."
             )
-            with pytest.raises(NoSessionsError, match=re.escape(error_msg)):
+            with pytest.raises(errors.NoSessionsError, match=re.escape(error_msg)):
                 calendar_cls(start=start, end=end)
 
     def test_bound_start(self, calendar_cls, start_bound, today):
@@ -3106,6 +3131,95 @@ class ExchangeCalendarTestBase:
 
         # Additional belt-and-braces test to reconcile with cal.all_minutes
         assert f(ans.first_session, ans.last_session) == len(cal.all_minutes)
+
+    def test_trading_index(self, calendars, answers):
+        """Test trading index with options as default values.
+
+        Tests multitude of concrete cases covering product of all
+        session blocks and various periods.
+
+        Assumes default value (False) for each of `force_close`,
+        `force_break_close` and `curtail_overlaps`. See test class
+        `test_exchange_calendars.TestTradingIndex` for more comprehensive
+        fuzz testing of select calendars (and parsing testing).
+        """
+        cal, ans = calendars["left"], answers["left"]
+
+        def unite(dtis: list[pd.DatetimeIndex]) -> pd.DatetimeIndex:
+            return dtis[0].append(dtis[1:])  # append to not sort or remove duplicates
+
+        for _, sessions in ans.session_block_generator():
+            for mins in [5, 17, 60, 123, 333, 1033]:
+                period = pd.Timedelta(mins, "T")
+                dtis = []
+                for session in sessions:
+                    indexes = ans.get_session_minutes(session)
+                    for i, index in enumerate(indexes):
+                        # Create closed 'both' trading index for each session/subsession
+                        if i == 0 and len(indexes) == 2:
+                            ends = ans.break_starts
+                        else:
+                            ends = ans.closes
+                        # index for a 'left' calendar, add end so evaluated as if 'both'
+                        index = index.append(pd.DatetimeIndex([ends[session]]))
+
+                        index = index[::mins]  # only want every period
+                        if not index[-1] == ends[session]:
+                            # if period doesn't coincide with end, add right side of
+                            # last interval which lies beyond end.
+                            last_indice = index[-1] + period
+                            index = index.append(pd.DatetimeIndex([last_indice]))
+                        dtis.append(index)
+
+                both_index = unite(dtis)
+                left_index = unite([dti[:-1] for dti in dtis])
+                right_index = unite([dti[1:] for dti in dtis])
+                neither_index = unite([dti[1:-1] for dti in dtis])
+
+                overlaps = (right_index[:-1] > left_index[1:]).any()
+                if overlaps:
+                    both_overlaps = overlaps
+                else:
+                    both_overlaps = False
+                    for dti, next_dti in zip(dtis, dtis[1:]):
+                        if dti[-1] == next_dti[0]:
+                            both_overlaps = True
+                            break
+
+                def get_index(closed: str, intervals: bool):
+                    start, end = sessions[0], sessions[-1]
+                    return cal.trading_index(
+                        start, end, period, intervals, closed, parse=False
+                    )
+
+                def tst_indices_index(
+                    expected: pd.DatetimeIndex, closed: str, overlaps: bool
+                ):
+                    if not overlaps:
+                        rtrn = get_index(closed, False)
+                        pd.testing.assert_index_equal(expected, rtrn)
+                    else:
+                        with pytest.raises(errors.IndicesOverlapError):
+                            get_index(closed, False)
+
+                tst_indices_index(both_index, "both", both_overlaps)
+                tst_indices_index(left_index, "left", False)
+                tst_indices_index(right_index, "right", overlaps)
+                tst_indices_index(neither_index, "neither", False)
+
+                def tst_intervals_index(closed: str, overlaps: bool):
+                    if not overlaps:
+                        rtrn = get_index(closed, True)
+                        expected = pd.IntervalIndex.from_arrays(
+                            left_index, right_index, closed
+                        )
+                        pd.testing.assert_index_equal(expected, rtrn)
+                    else:
+                        with pytest.raises(errors.IntervalsOverlapError):
+                            get_index(closed, True)
+
+                tst_intervals_index("left", overlaps)
+                tst_intervals_index("right", overlaps)
 
 
 class EuronextCalendarTestBase(ExchangeCalendarTestBase):
