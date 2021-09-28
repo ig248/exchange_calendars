@@ -276,3 +276,38 @@ class MinuteOutOfBounds(ValueError):
                 or self.minute > self.calendar.last_trading_minute
             )
         return msg
+
+
+class IndexOverlapError(ValueError):
+    """Periods implied by indices overlap."""
+
+
+class IntervalsOverlapError(IndexOverlapError):
+    """Intervals of requested trading index would overlap."""
+
+    # pylint: disable=missing-return-type-doc
+    def __str__(self):  # noqa: D105
+        return (
+            "Unable to create trading index as intervals would overlap."
+            " This can occur when the frequency is longer than a break or"
+            " the period between one session's close and the next"
+            " session's open. To shorten intervals that would otherwise"
+            " overlap either pass `curtail_overlaps` as True or pass"
+            " `force_close` and/or `force_break_close` as True."
+        )
+
+
+class IndicesOverlapError(IndexOverlapError):
+    """Indices of requested trading index would overlap."""
+
+    # pylint: disable=missing-return-type-doc
+    def __str__(self):  # noqa: D105
+        return (
+            "Unable to create trading index as an indice would fall to the"
+            " right of (later than) the subsequent indice. This can occur"
+            " when the frequency is longer than a break or the frequency"
+            " is longer than the period between one session's close and"
+            " the next session's open. Consider  passing `closed` as"
+            " 'left' or passing `force_close` and/or `force_break_close`"
+            " as True."
+        )

@@ -44,6 +44,7 @@ from .calendar_helpers import (
     parse_trading_minute,
     parse_session,
     parse_date,
+    _TradingIndex,
 )
 from .utils.memoize import lazyval
 from .utils.pandas_utils import days_at_time
@@ -216,10 +217,10 @@ class ExchangeCalendar(ABC):
         end: Date | None = None,
         side: str | None = None,
     ):
-        side = side if side is not None else self.default_side
-        if side not in self.valid_sides:
+        side = side if side is not None else self.default_side()
+        if side not in self.valid_sides():
             raise ValueError(
-                f"`side` must be in {self.valid_sides} although received as {side}."
+                f"`side` must be in {self.valid_sides()} although received as {side}."
             )
         self._side = side
 
@@ -590,18 +591,18 @@ class ExchangeCalendar(ABC):
                 weekmask=self.weekmask,
             )
 
-    @property
-    def valid_sides(self) -> list[str]:
+    @classmethod
+    def valid_sides(cls) -> list[str]:
         """List of valid `side` options."""
-        if self.close_times == self.open_times:
+        if cls.close_times == cls.open_times:
             return ["left", "right"]
         else:
             return ["both", "left", "right", "neither"]
 
-    @property
-    def default_side(self) -> str:
+    @classmethod
+    def default_side(cls) -> str:
         """Default `side` option."""
-        if self.close_times == self.open_times:
+        if cls.close_times == cls.open_times:
             return "right"
         else:
             return "both"
@@ -1949,6 +1950,216 @@ class ExchangeCalendar(ABC):
         break_diff[break_diff != 0] -= NANOSECONDS_PER_MINUTE
         nanos = session_diff - break_diff
         return (nanos // NANOSECONDS_PER_MINUTE).sum()
+
+    def trading_index(
+        self,
+        start: Date,
+        end: Date,
+        period: pd.Timedelta | str,
+        intervals: bool = True,
+        closed: str = "left",  # when move to min 3.8 Literal["left", "right", "both", "neither"]
+        force_close: bool = False,
+        force_break_close: bool = False,
+        curtail_overlaps: bool = False,
+        parse: bool = True,
+    ) -> pd.DatetimeIndex | pd.IntervalIndex:
+        """Create a trading index.
+
+        Create a trading index of given `period` over a given range of
+        dates.
+
+        NB. Which minutes the calendar treats as trading minutes, according
+        to `self.side`, is irrelevant in the evaluation of the trading
+        index.
+
+        NB. Execution time is related to the number of indices created. The
+        longer the range of dates covered and/or the shorter the period
+        (i.e. higher the frequency), the longer the execution. Whilst an
+        index with 4000 indices might be created in a couple of
+        miliseconds, a high frequency index with 2 million indices might
+        take a second or two.
+
+        Parameters
+        ----------
+        start
+            Start of session range over which to create index.
+
+        end
+            End of session range over which to create index.
+
+        period
+            If `intervals` is True, the length of each interval. If
+            `intervals` is False, the distance between indices. Period
+            should be passed as a pd.Timedelta or a str that's acceptable
+            as a single input to pd.Timedelta. `period` cannot be greater
+            than 1 day.
+
+            Examples of valid `period` input:
+                pd.Timedelta(minutes=15), pd.Timedelta(minutes=15, hours=2)
+                '15min', '15T', '1H', '4h', '1d', '30s', '2s', '500ms'.
+            Examples of invalid `period` input:
+                '15minutes', '2d'.
+
+        intervals : default: True
+            True to return trading index as a pd.IntervalIndex with indices
+            representing explicit intervals.
+
+            False to return trading index as a pd.DatetimeIndex with
+            indices that implicitely represent a period according to
+            `closed`.
+
+            If `period` is '1d' then trading index will be returned as a
+            pd.DatetimeIndex.
+
+        closed : {"left", "right", "both", "neither"}
+            (ignored if `period` is '1d'.)
+
+            If `intervals` is True, the side that intervals should be
+            closed on. Must be either "left" or "right" (any time during a
+            session must belong to one interval and one interval only).
+
+            If `intervals` is False, the side of each period that an
+            indice should be defined. The first and last indices of each
+            (sub)session will be defined according to:
+                "left" - include left side of first period, do not include
+                    right side of last period.
+                "right" - do not include left side of first period, include
+                    right side of last period.
+                "both" - include both left side of first period and right
+                    side of last period.
+                "neither" - do not include either left side of first period
+                    or right side of last period.
+            NB if `period` is not a factor of the (sub)session length then
+            "right" or "both" will result in an indice being defined after
+            the (sub)session close. See `force_close` and
+            `force_break_close`.
+
+        force_close : default: False
+            (ignored if `period` is '1d')
+            (irrelevant if `intervals` is False and `closed` is "left" or
+            "neither")
+
+            Defines behaviour if right side of a session's last period
+            falls after the session close.
+
+            If True, defines right side of this period as session close.
+
+            If False, defines right side of this period after the session
+            close. In this case the represented period will include a
+            non-trading period.
+
+        force_break_close : default: False
+            (ignored if `period` is '1d'.)
+            (irrelevant if `intervals` is False and `closed` is "left" or
+            "neither.)
+
+            Defines behaviour if right side of last pre-break period falls
+            after the start of the break.
+
+            If True, defines right side of this period as break start.
+
+            If False, defines right side of this period after the break
+            start. In this case the represented period will include a
+            non-trading period.
+
+        curtail_overlaps : default: False
+            (ignored if `period` is '1d')
+            (irrelevant if (`intervals` is False) or (`force_close` and
+            `force_break_close` are both True).)
+
+            Defines action to take if a period ends after the start of the
+            next period. (This can occur if `period` is longer
+            than a break or the gap between one session's close and the
+            next session's open.)
+
+                If True, the right of the earlier of two overlapping
+                periods will be curtailed to the left of the latter period.
+                (NB consequently the period length will not be constant for
+                all periods.)
+
+                If False, will raise IntervalsOverlapError.
+
+        parse : default: True
+            Determines if `start` and `end` values are parsed. If these
+            arguments are passed as pd.Timestamp with no time component
+            and tz as UTC then can pass `parse` as False to save around
+            500µs on the execution.
+
+        Returns
+        -------
+        pd.IntervalIndex or pd.DatetimeIndex
+            Trading index.
+
+            If `intervals` is False or `period` is '1d' then returned as a
+                pd.DatetimeIndex.
+            If `intervals` is True (default) returned as pd.IntervalIndex.
+
+        Raises
+        ------
+        exchange_calendars.errors.IntervalsOverlapError
+            If `intervals` is True and right side of one or more indices
+            would fall after the left of the subsequent indice. This can
+            occur if `period` is longer than a break or the gap between one
+            session's close and the next session's open.
+
+        exchange_calendars.errors.IntervalsOverlapError
+            If `intervals` is False and an indice would otherwise fall to
+            the right of the subsequent indice. This can occur if `period`
+            is longer than a break or the gap between one session's close
+            and the next session's open.
+
+        Credit to @Stryder-Git at pandas_market_calendars for showing the
+        way with a vectorised solution to creating trading indices (a
+        variation of which is employed within the underlying _TradingIndex
+        class).
+        """
+        if parse:
+            start = self._parse_session_range_end(start)
+            end = self._parse_session_range_end(end)
+
+        if not isinstance(period, pd.Timedelta):
+            try:
+                period = pd.Timedelta(period)
+            except ValueError:
+                msg = (
+                    f"`period` receieved as '{period}' although takes type"
+                    " 'pd.Timedelta' or a type 'str' that is valid as a single input"
+                    " to 'pd.Timedelta'. Examples of valid input: pd.Timestamp('15T'),"
+                    " '15min', '15T', '1H', '4h', '1d', '5s', 500ms'."
+                )
+                raise ValueError(msg) from None
+
+        if period > pd.Timedelta(1, "D"):
+            msg = (
+                "`period` cannot be greater than one day although received as"
+                f" '{period}'."
+            )
+            raise ValueError(msg)
+
+        if period == pd.Timedelta(1, "D"):
+            return self.sessions_in_range(start, end)
+
+        if intervals and closed in ["both", "neither"]:
+            raise ValueError(
+                f"If `intervals` is True then `closed` cannot be '{closed}'."
+            )
+
+        # method exposes public methods of _TradingIndex.
+        _trading_index = _TradingIndex(
+            self,
+            start,
+            end,
+            period,
+            closed,
+            force_close,
+            force_break_close,
+            curtail_overlaps,
+        )
+
+        if not intervals:
+            return _trading_index.trading_index()
+        else:
+            return _trading_index.trading_index_intervals()
 
     # Internal methods called by constructor.
 
