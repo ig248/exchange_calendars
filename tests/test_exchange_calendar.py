@@ -1030,6 +1030,7 @@ class ExchangeCalendarTestBase(object):
             self.assertTrue(self.calendar.session_has_break(self.SESSION_WITH_BREAK))
 
 
+# TODO migrate all subclasses of EuronextCalendarTestBase together under same commit.
 class EuronextCalendarTestBase(ExchangeCalendarTestBase):
     """
     Shared tests for countries on the Euronext exchange.
@@ -1108,6 +1109,8 @@ class EuronextCalendarTestBase(ExchangeCalendarTestBase):
             )
 
 
+# TODO remove this class when all calendars migrated. No longer requried as
+#  `minute_index_to_session_labels` comprehensively tested under new suite.
 class OpenDetectionTestCase(TestCase):
     # This is an extra set of unit tests that were added during a rewrite of
     # `minute_index_to_session_labels` to ensure that the existing
@@ -1157,6 +1160,8 @@ class OpenDetectionTestCase(TestCase):
             self.assertIn("First Bad Minute: {}".format(minute), exc_str)
 
 
+# TODO remove this class when all calendars migrated. No longer requried as
+#  this case is handled by new test base internally.
 class NoDSTExchangeCalendarTestBase(ExchangeCalendarTestBase):
     def test_daylight_savings(self):
         """
@@ -1369,6 +1374,11 @@ class Answers:
         return self.sessions[-1]
 
     @property
+    def sessions_range(self) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """First and last sessions covered by answers."""
+        return self.first_session, self.last_session
+
+    @property
     def first_session_open(self) -> pd.Timestamp:
         """Open time of first session covered by answers."""
         return self.opens[0]
@@ -1387,6 +1397,11 @@ class Answers:
     def last_trading_minute(self) -> pd.Timestamp:
         close = self.last_session_close
         return close if self.side in self.RIGHT_SIDES else close - self.ONE_MIN
+
+    @property
+    def trading_minutes_range(self) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """First and last trading minutes covered by answers."""
+        return self.first_trading_minute, self.last_trading_minute
 
     # --- out-of-bounds properties ---
 
@@ -2441,7 +2456,7 @@ def no_parsing(f: typing.Callable):
     return lambda *args, **kwargs: f(*args, _parse=False, **kwargs)
 
 
-class ExchangeCalendarTestBaseProposal:
+class ExchangeCalendarTestBaseNew:
     """Test base for an ExchangeCalendar.
 
     Notes
@@ -3631,7 +3646,7 @@ class ExchangeCalendarTestBaseProposal:
 
         index = pd.DatetimeIndex(mins).sort_values()
         sessions_labels = f(index)
-        assert sessions_labels.equals(pd.DatetimeIndex(sessions).sort_values())
+        tm.assert_index_equal(sessions_labels, pd.DatetimeIndex(sessions).sort_values())
 
     # Tests for methods that evaluate or interrogate a range of sessions.
 

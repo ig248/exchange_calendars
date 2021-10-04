@@ -1,71 +1,42 @@
 from __future__ import annotations
 from datetime import time
-from unittest import TestCase
 from collections import abc
 
 import pytest
 import pandas as pd
-from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xhkg import XHKGExchangeCalendar
 
-from .test_exchange_calendar import (
-    ExchangeCalendarTestBase,
-    ExchangeCalendarTestBaseProposal,
-)
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 from .test_utils import T
 
 
-class XHKGCalendarTestCase(ExchangeCalendarTestBase, TestCase):
+class TestXHKGCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self) -> abc.Iterator[XHKGExchangeCalendar]:
+        yield XHKGExchangeCalendar
 
-    answer_key_filename = "xhkg"
-    calendar_class = XHKGExchangeCalendar
+    @pytest.fixture(scope="class")
+    def max_session_hours(self) -> abc.Iterator[int | float]:
+        yield 6.5
 
-    START_BOUND = T("1960-01-01")
-    END_BOUND = T("2049-12-31")
-    HAVE_BREAKS = True
-    SESSION_WITH_BREAK = pd.Timestamp("2018-12-13", tz="UTC")
-    SESSION_WITHOUT_BREAK = pd.Timestamp("2018-12-31", tz="UTC")
+    @pytest.fixture(scope="class")
+    def start_bound(self) -> abc.Iterator[pd.Timestamp | None]:
+        """Earliest date for which calendar can be instantiated, or None if
+        there is no start bound."""
+        yield T("1960-01-01")
 
-    MAX_SESSION_HOURS = 6.5
+    @pytest.fixture(scope="class")
+    def end_bound(self) -> abc.Iterator[pd.Timestamp | None]:
+        """Latest date for which calendar can be instantiated, or None if
+        there is no end bound."""
+        yield T("2049-12-31")
 
-    # Asia/Hong_Kong does not have daylight savings
-    DAYLIGHT_SAVINGS_DATES = []
+    # Additional tests
 
-    def test_session_break(self):
-        # Test that the calendar correctly reports itself as closed during
-        # session break
-        normal_minute = pd.Timestamp("2003-01-27 03:30:00")
-        break_start_minute = pd.Timestamp("2003-01-27 04:00:00")
-        mid_break_minute = pd.Timestamp("2003-01-27 04:30:00")
-        break_end_minute = pd.Timestamp("2003-01-27 05:00:00")
-
-        self.assertTrue(self.calendar.is_open_on_minute(normal_minute))
-        self.assertTrue(self.calendar.is_open_on_minute(break_start_minute))
-        self.assertFalse(self.calendar.is_open_on_minute(mid_break_minute))
-        self.assertTrue(self.calendar.is_open_on_minute(break_end_minute))
-        # Make sure that ignoring breaks indicates the exchange is open
-        self.assertTrue(
-            self.calendar.is_open_on_minute(mid_break_minute, ignore_breaks=True)
-        )
-
-        current_session_label = self.calendar.minute_to_session_label(
-            normal_minute, direction="none"
-        )
-        self.assertEqual(
-            current_session_label,
-            self.calendar.minute_to_session_label(
-                mid_break_minute, direction="previous"
-            ),
-        )
-        self.assertEqual(
-            current_session_label,
-            self.calendar.minute_to_session_label(mid_break_minute, direction="next"),
-        )
-
-    def test_lunar_new_year_2003(self):
-        # NOTE: Lunar Month 12 2002 is the 12th month of the lunar year that
-        # begins in 2002; this month actually takes place in January 2003.
+    def test_lunar_new_year_2003(self, default_calendar):
+        # NOTE: Lunar Month 12 2002 is the 12th month of the lunar year that begins
+        # in 2002; this month actually takes place in January 2003.
 
         # Lunar Month 12 2002
         #   January-January
@@ -86,23 +57,17 @@ class XHKGCalendarTestCase(ExchangeCalendarTestBase, TestCase):
         # 23 24 25 26 27 28  1
         #  2
 
-        start_session = pd.Timestamp("2003-01-27", tz=UTC)
-        end_session = pd.Timestamp("2003-02-28", tz=UTC)
-        sessions = self.calendar.sessions_in_range(start_session, end_session)
-
-        holidays = pd.to_datetime(
-            # prior to 2011, lunar new years eve is a holiday if new years is
-            # a Saturday
-            ["2003-01-31", "2003-02-03"],
-            utc=True,
-        )
+        # Prior to 2011, lunar new years eve is a holiday if new years is a Saturday.
+        holidays = [
+            T("2003-01-31"),
+            T("2003-02-03"),
+        ]
         for holiday in holidays:
-            self.assertNotIn(holiday, sessions)
+            assert holiday not in default_calendar.all_sessions
 
-    def test_lunar_new_year_2018(self):
-        # NOTE: Lunar Month 12 2017 is the 12th month of the lunar year that
-        # begins in 2017; this month actually takes place in January and
-        # February 2018.
+    def test_lunar_new_year_2018(self, default_calendar):
+        # NOTE: Lunar Month 12 2017 is the 12th month of the lunar year that begins
+        # in 2017; this month actually takes place in January and February 2018.
 
         # Lunar Month 12 2017
         #   January-February
@@ -121,30 +86,21 @@ class XHKGCalendarTestCase(ExchangeCalendarTestBase, TestCase):
         # 25 26 27 28  1  2  3
         #  4  5  6  7  8  9 10
         # 11 12 13 14 15 16
+        cal = default_calendar
+        holidays = [
+            T("2018-02-16"),
+            T("2018-02-19"),
+        ]
+        for holiday in holidays:
+            assert holiday not in cal.all_sessions
 
-        start_session = pd.Timestamp("2018-02-12", tz=UTC)
-        end_session = pd.Timestamp("2018-03-15", tz=UTC)
-        closes = self.calendar.session_closes_in_range(
-            start_session,
-            end_session,
-        )
+        early_close = pd.Timestamp("2018-02-15 12:00", tz="Asia/Hong_Kong")
+        assert cal.closes.loc["2018-02-15"].tz_localize("UTC") == early_close
 
-        full_holidays = pd.to_datetime(
-            ["2018-02-16", "2018-02-19"],
-            utc=True,
-        )
-        for holiday in full_holidays:
-            self.assertNotIn(holiday, closes.index)
+    def test_full_year_with_lunar_leap_year(self, default_calendar):
+        # 2017 Lunar month 6 will be a leap month (double length). This
+        # affects when all the lunisolar holidays after the 6th month occur.
 
-        self.assertEqual(
-            closes.loc["2018-02-15"],
-            pd.Timestamp("2018-02-15 12:00", tz="Asia/Hong_Kong"),
-        )
-
-    def test_full_year_with_lunar_leap_year(self):
-        """2017 Lunar month 6 will be a leap month (double length). This
-        affects when all the lunisolar holidays after the 6th month occur.
-        """
         #                         Gregorian Calendar
         #                                2017
         #
@@ -227,82 +183,44 @@ class XHKGCalendarTestCase(ExchangeCalendarTestBase, TestCase):
         # 10 11 12 13 14 15 16   14 15 16               11 12 13 14 15
         # 17
         full_holidays = [
-            # New Year's Day (Sunday to Monday observance)
-            T("2017-01-02"),
-            # Lunar New Year
-            T("2017-01-30"),
-            T("2017-01-31"),
-            # Qingming Festival (based off qingming solar term, not lunar
-            # cycle)
-            T("2017-04-04"),
-            # Good Friday
-            T("2017-04-14"),
-            # Easter Monday
-            T("2017-04-17"),
-            # Labour Day
-            T("2017-05-01"),
-            # Buddha's Birthday (The 8th day of the 4th lunar month)
-            T("2017-05-03"),
+            T("2017-01-02"),  # New Year's Day (Sunday to Monday observance)
+            T("2017-01-30"),  # Lunar New Year
+            T("2017-01-31"),  # Lunar New Year
+            T("2017-04-04"),  # Qingming Festival (off qingming solar term, not lunar)
+            T("2017-04-14"),  # Good Friday
+            T("2017-04-17"),  # Easter Monday
+            T("2017-05-01"),  # Labour Day
+            T("2017-05-03"),  # Buddha's Birthday (The 8th day of the 4th lunar month)
             # Tuen Ng Festival (also known as Dragon Boat Festival. The 5th day
             # of the 5th lunar month, then Sunday to Monday observance)
             T("2017-05-30"),
-            # National Day (Sunday to Monday observance)
-            T("2017-10-02"),
+            T("2017-10-02"),  # National Day (Sunday to Monday observance)
             # The day following the Mid-Autumn Festival (Mid-Autumn Festival
             # is the 15th day of the 8th lunar month. This market holiday is
             # next day because the festival is celebrated at night)
             T("2017-10-05"),
-            # Christmas Day
-            T("2017-12-25"),
-            # The day after Christmas
-            T("2017-12-25"),
+            T("2017-12-25"),  # Christmas Day
+            T("2017-12-26"),  # The day after Christmas
         ]
 
-        half_days = [
-            # Lunar New Year's Eve
-            T("2017-01-27"),
+        early_closes = [
+            T("2017-01-27"),  # Lunar New Year's Eve
             # Christmas Eve and New Year's Eve are both Sunday this year
         ]
 
-        start_session = pd.Timestamp("2017-01-02", tz=UTC)
-        end_session = pd.Timestamp("2017-12-29", tz=UTC)
-        closes = self.calendar.session_closes_in_range(
-            start_session,
-            end_session,
-        )
+        cal = default_calendar
+        closes = cal.session_closes_in_range("2017-01-01", "2017-12-31")
 
         for holiday in full_holidays:
-            self.assertNotIn(holiday, closes)
+            assert holiday not in cal.all_sessions
 
-        for half_day in half_days:
-            close_time = half_day.tz_convert(None).tz_localize(
+        for early_close in early_closes:
+            close_time = early_close.tz_convert(None).tz_localize(
                 "Asia/Hong_Kong"
             ) + pd.Timedelta(hours=12)
-            self.assertEqual(close_time, closes[half_day])
+            assert close_time == closes[early_close]
 
-        local_time_close = closes.drop(half_days).dt.tz_convert(
+        local_time_close = closes.drop(early_closes).dt.tz_convert(
             "Asia/Hong_Kong",
         )
-        self.assertEqual({time(16)}, set(local_time_close.dt.time))
-
-
-class TestXHKGCalendar(ExchangeCalendarTestBaseProposal):
-    @pytest.fixture(scope="class")
-    def calendar_cls(self) -> abc.Iterator[XHKGExchangeCalendar]:
-        yield XHKGExchangeCalendar
-
-    @pytest.fixture(scope="class")
-    def max_session_hours(self) -> abc.Iterator[int | float]:
-        yield 6.5
-
-    @pytest.fixture(scope="class")
-    def start_bound(self) -> abc.Iterator[pd.Timestamp | None]:
-        """Earliest date for which calendar can be instantiated, or None if
-        there is no start bound."""
-        yield T("1960-01-01")
-
-    @pytest.fixture(scope="class")
-    def end_bound(self) -> abc.Iterator[pd.Timestamp | None]:
-        """Latest date for which calendar can be instantiated, or None if
-        there is no end bound."""
-        yield T("2049-12-31")
+        assert {time(16)} == set(local_time_close.dt.time)
