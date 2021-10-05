@@ -29,7 +29,8 @@ import pandas as pd
 import pandas.testing as tm
 from pandas import Timedelta, read_csv
 from parameterized import parameterized
-from pytz import UTC, timezone
+import pytz
+from pytz import UTC
 from toolz import concat
 
 from exchange_calendars import get_calendar
@@ -139,7 +140,7 @@ class DaysAtTimeTestCase(TestCase):
                 "2016-07-19",
                 0,
                 time(9, 31),
-                timezone("America/New_York"),
+                pytz.timezone("America/New_York"),
                 "2016-07-19 9:31",
             ),
             # CME standard day
@@ -147,7 +148,7 @@ class DaysAtTimeTestCase(TestCase):
                 "2016-07-19",
                 -1,
                 time(17, 1),
-                timezone("America/Chicago"),
+                pytz.timezone("America/Chicago"),
                 "2016-07-18 17:01",
             ),
             # CME day after DST start
@@ -155,7 +156,7 @@ class DaysAtTimeTestCase(TestCase):
                 "2004-04-05",
                 -1,
                 time(17, 1),
-                timezone("America/Chicago"),
+                pytz.timezone("America/Chicago"),
                 "2004-04-04 17:01",
             ),
             # ICE day after DST start
@@ -163,7 +164,7 @@ class DaysAtTimeTestCase(TestCase):
                 "1990-04-02",
                 -1,
                 time(19, 1),
-                timezone("America/Chicago"),
+                pytz.timezone("America/Chicago"),
                 "1990-04-01 19:01",
             ),
         ]
@@ -2500,7 +2501,7 @@ class ExchangeCalendarTestBaseNew:
     # subclass must override the following fixtures
 
     @pytest.fixture(scope="class")
-    def calendar_cls(self) -> abc.Iterator[ExchangeCalendar]:
+    def calendar_cls(self) -> abc.Iterator[typing.Type[ExchangeCalendar]]:
         """ExchangeCalendar class to be tested.
 
         Examples:
@@ -2545,7 +2546,98 @@ class ExchangeCalendarTestBaseNew:
         there is no end bound."""
         yield None
 
+    @pytest.fixture(scope="class")
+    def regular_holidays_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of known regular calendar holidays. Empty list if no holidays.
+
+        Each holiday will be tested to ensure it is not a calendar session.
+
+        Example return:
+            ["2015-01-01", "2015-03-18", "2015-06-01", "2015-12-25"]
+        """
+        yield []
+
+    @pytest.fixture(scope="class")
+    def adhoc_holidays_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of adhoc calendar holidays. Empty list if no adhoc holidays.
+
+        Each holiday will be tested to ensure it is not a calendar session.
+
+        Example return:
+            ["2015-04-17", "2021-09-12"]
+        """
+        yield []
+
+    @pytest.fixture(scope="class")
+    def sessions_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of known calendar sessions. Empty list if no holidays.
+
+        Each date will be tested to ensure it represents a calendar session.
+
+        Subclass should use this fixture if wish to test edge cases, for
+        example where a session is an exception to a rule, or where session
+        preceeds/follows a holiday that is an exception to a rule.
+
+        Example return:
+            ["2011-02-03", "2014-05-06", "2017-08-09"]
+        """
+        yield []
+
+    @pytest.fixture(scope="class")
+    def late_opens_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of known calendar late opens. Empty list if no late opens.
+
+        Each date will be tested to ensure it does represent a session with
+        a late open.
+
+        Example return:
+            ["2022-01-03", "2022-04-22"]
+        """
+        yield []
+
+    @pytest.fixture(scope="class")
+    def early_closes_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of known calendar early closes. Empty list if no early closes.
+
+        Each date will be tested to ensure it does represent a session with
+        an early close.
+
+        Example return:
+            ["2021-12-24", "2021-12-31"]
+        """
+        yield []
+
     # --- NO FIXTURE BELOW THIS LINE SHOULD BE OVERRIDEN ON A SUBCLASS ---
+
+    def test_testbase_integrity(self):
+        """Ensure integrity of TestBase.
+
+        Raises error if a reserved fixture is overriden by the subclass.
+        """
+        cls = self.__class__
+        for fixture in [
+            "test_testbase_integrity",
+            "name",
+            "has_24h_session",
+            "default_side",
+            "sides",
+            "answers",
+            "default_answers",
+            "calendars",
+            "default_calendar",
+            "calendars_with_answers",
+            "default_calendar_with_answers",
+            "one_minute",
+            "today",
+            "all_directions",
+            "valid_overrides",
+            "non_valid_overrides",
+            "daylight_savings_dates",
+            "late_opens",
+            "early_closes",
+        ]:
+            if getattr(cls, fixture) != getattr(ExchangeCalendarTestBaseNew, fixture):
+                raise RuntimeError(f"fixture '{fixture}' should not be overriden!")
 
     # Base class fixtures
 
@@ -2687,12 +2779,15 @@ class ExchangeCalendarTestBaseNew:
         cal = default_calendar
         year = cal.last_session.year - 1
         days = pd.date_range(str(year), str(year + 1), freq="D")
-        tzinfo = timezone(cal.tz.zone)
+        tzinfo = pytz.timezone(cal.tz.zone)
 
         prev_offset = tzinfo.utcoffset(days[0])
         dates = []
         for day in days[1:]:
-            offset = tzinfo.utcoffset(day)
+            try:
+                offset = tzinfo.utcoffset(day)
+            except pytz.NonExistentTimeError:
+                offset = tzinfo.utcoffset(day + pd.Timedelta(1, "H"))
             if offset != prev_offset:
                 dates.append(day)
                 if len(dates) == 2:
@@ -2889,8 +2984,8 @@ class ExchangeCalendarTestBaseNew:
         open_times = pd.Series(d)
 
         for date in daylight_savings_dates:
-            # where `next day` is first day of new daylight savings regime
-            next_day = pd.Timestamp(date, tz=UTC)
+            # where `next day` is first session of new daylight savings regime
+            next_day = cal.date_to_session_label(T(date), "next")
             open_date = next_day + Timedelta(days=cal.open_offset)
 
             the_open = cal.schedule.loc[next_day].market_open
@@ -3095,6 +3190,31 @@ class ExchangeCalendarTestBaseNew:
         else:
             # in which case all sessions must have a break. Make sure...
             assert cal.break_starts.notna().all()
+
+    def test_regular_holidays_sample(self, default_calendar, regular_holidays_sample):
+        """Test that calendar-specific sample of holidays are not sessions."""
+        for holiday in regular_holidays_sample:
+            assert T(holiday) not in default_calendar.all_sessions
+
+    def test_adhoc_holidays_sample(self, default_calendar, adhoc_holidays_sample):
+        """Test that calendar-specific sample of holidays are not sessions."""
+        for holiday in adhoc_holidays_sample:
+            assert T(holiday) not in default_calendar.all_sessions
+
+    def test_sessions_sample(self, default_calendar, sessions_sample):
+        """Test that calendar-specific sample of sessions are sessions."""
+        for session in sessions_sample:
+            assert T(session) in default_calendar.all_sessions
+
+    def test_late_opens_sample(self, default_calendar, late_opens_sample):
+        """Test calendar-specific sample of late opens are included to sessions."""
+        for late_open in late_opens_sample:
+            assert T(late_open) in default_calendar.late_opens
+
+    def test_early_closes_sample(self, default_calendar, early_closes_sample):
+        """Test calendar-specific sample of early closes are included to sessions."""
+        for early_close in early_closes_sample:
+            assert T(early_close) in default_calendar.early_closes
 
     def test_late_opens(self, default_calendar, late_opens):
         """Test late opens.

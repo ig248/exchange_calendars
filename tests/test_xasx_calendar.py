@@ -1,123 +1,82 @@
-from unittest import TestCase
+import datetime
 
-import pandas as pd
-from pytz import UTC
+import pytest
 
 from exchange_calendars.exchange_calendar_xasx import XASXExchangeCalendar
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
-from .test_exchange_calendar import ExchangeCalendarTestBase
 
+class TestXASXCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XASXExchangeCalendar
 
-class XASXCalendarTestCase(ExchangeCalendarTestBase, TestCase):
+    @pytest.fixture(scope="class")
+    def max_session_hours(self):
+        yield 6
 
-    answer_key_filename = "xasx"
-    calendar_class = XASXExchangeCalendar
-
-    # The XASX is open from 10:00 am to 4:00 pm.
-    MAX_SESSION_HOURS = 6
-
-    def test_normal_year(self):
-        expected_holidays = [
-            pd.Timestamp("2018-01-01", tz=UTC),  # New Year's Day
-            pd.Timestamp("2018-01-26", tz=UTC),  # Australia Day
-            pd.Timestamp("2018-03-30", tz=UTC),  # Good Friday
-            pd.Timestamp("2018-04-02", tz=UTC),  # Easter Monday
-            pd.Timestamp("2018-04-25", tz=UTC),  # Anzac Day
-            pd.Timestamp("2018-06-11", tz=UTC),  # Queen's Birthday
-            pd.Timestamp("2018-12-25", tz=UTC),  # Christmas
-            pd.Timestamp("2018-12-26", tz=UTC),  # Boxing Day
-        ]
-
-        for session_label in expected_holidays:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
-
-        early_closes = [
-            pd.Timestamp("2018-12-24", tz=UTC),  # Day before Christmas
-            pd.Timestamp("2018-12-31", tz=UTC),  # Day before New Year's
-        ]
-
-        for early_close_session_label in early_closes:
-            self.assertIn(
-                early_close_session_label,
-                self.calendar.early_closes,
-            )
-
-    def test_holidays_fall_on_weekend(self):
-        """
-        Holidays falling on a weekend should be made up on the next weekday.
-
-        Anzac Day is observed on the following Monday only when falling
-        on a Sunday. In years where Anzac Day falls on a Saturday, there
-        is no make-up.
-
-        Christmas/Boxing Day are special cases, whereby if Christmas is a
-        Saturday and Boxing Day is a Sunday, the next Monday and Tuesday will
-        be holidays. If Christmas is a Sunday and Boxing Day is a Monday then
-        Monday and Tuesday will still both be holidays.
-        """
-        expected_holidays = [
-            # New Year's Day on a Sunday, observed on Monday.
-            pd.Timestamp("2017-01-02", tz=UTC),
-            # Australia Day on a Sunday, observed on Monday (2010 and after).
-            pd.Timestamp("2014-01-27", tz=UTC),
-            # Anzac Day on a Sunday, observed on Monday.
-            pd.Timestamp("2010-04-26", tz=UTC),
+    @pytest.fixture(scope="class")
+    def regular_holidays_sample(self):
+        yield [
+            # 2018
+            "2018-01-01",  # New Year's Day
+            "2018-01-26",  # Australia Day
+            "2018-03-30",  # Good Friday
+            "2018-04-02",  # Easter Monday
+            "2018-04-25",  # Anzac Day
+            "2018-06-11",  # Queen's Birthday
+            "2018-12-25",  # Christmas
+            "2018-12-26",  # Boxing Day
+            # Holidays made up when fall on weekend.
+            # Anzac Day is observed on the following Monday only when falling
+            # on a Sunday. In years where Anzac Day falls on a Saturday, there
+            # is no make-up.
+            "2017-01-02",  # New Year's Day on a Sunday, observed on Monday.
+            "2014-01-27",  # Australia Day on a Sunday, observed on Monday (from 2010).
+            "2010-04-26",  # Anzac Day on a Sunday, observed on Monday.
+            # Christmas/Boxing Day are special cases, whereby if Christmas is a
+            # Saturday and Boxing Day is a Sunday, the next Monday and Tuesday will
+            # be holidays. If Christmas is a Sunday and Boxing Day is a Monday then
+            # Monday and Tuesday will still both be holidays.
             # Christmas on a Sunday, Boxing Day on Monday.
-            pd.Timestamp("2016-12-26", tz=UTC),
-            pd.Timestamp("2016-12-27", tz=UTC),
+            "2016-12-26",
+            "2016-12-27",
             # Christmas on a Saturday, Boxing Day on Sunday.
-            pd.Timestamp("2010-12-27", tz=UTC),
-            pd.Timestamp("2010-12-28", tz=UTC),
+            "2010-12-27",
+            "2010-12-28",
         ]
 
-        for session_label in expected_holidays:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
+    @pytest.fixture(scope="class")
+    def sessions_sample(self):
+        # Anzac Day on a Saturday, does not have a make-up (prior to 2010).
+        yield ["2015-04-27", "2004-04-26"]
 
-        expected_sessions = [
-            # Anzac Day on a Saturday, does not have a make-up.
-            pd.Timestamp("2015-04-27", tz=UTC),
-            # Anzac Day on a Saturday, does not have a make-up (prior
-            # to 2010).
-            pd.Timestamp("2004-04-26", tz=UTC),
-        ]
-
-        for session_label in expected_sessions:
-            self.assertIn(session_label, self.calendar.all_sessions)
-
-    def test_half_days(self):
-        half_days = [
+    @pytest.fixture(scope="class")
+    def early_closes_sample(self):
+        yield [
             # In 2018, the last trading days before Christmas and New Year's
-            # are on Mondays, so they should be half days.
-            pd.Timestamp("2018-12-24", tz="Australia/Sydney"),
-            pd.Timestamp("2018-12-31", tz="Australia/Sydney"),
+            # are on Mondays, so they should be early closes.
+            "2018-12-24",
+            "2018-12-31",
             # In 2017, Christmas and New Year's fell on Mondays, so the last
-            # trading days before them were Fridays, which should be half days.
-            pd.Timestamp("2017-12-22", tz="Australia/Sydney"),
-            pd.Timestamp("2017-12-29", tz="Australia/Sydney"),
+            # trading days before them were Fridays, which should be early closes.
+            "2017-12-22",
+            "2017-12-29",
             # In 2016, Christmas and New Year's fell on Sundays, so the last
-            # trading days before them were Fridays, which should be half days.
-            pd.Timestamp("2016-12-23", tz="Australia/Sydney"),
-            pd.Timestamp("2016-12-30", tz="Australia/Sydney"),
-            # 2010 is the first year we expect the half day rules to take
-            # effect.
-            pd.Timestamp("2010-12-24", tz="Australia/Sydney"),
-            pd.Timestamp("2010-12-31", tz="Australia/Sydney"),
-        ]
-        full_days = [
-            # In 2009 the half day rules should not be in effect yet.
-            pd.Timestamp("2009-12-24", tz="Australia/Sydney"),
-            pd.Timestamp("2009-12-31", tz="Australia/Sydney"),
+            # trading days before them were Fridays, which should be early closes.
+            "2016-12-23",
+            "2016-12-30",
         ]
 
-        for half_day in half_days:
-            half_day_close_time = self.calendar.next_close(half_day)
-            self.assertEqual(
-                half_day_close_time.tz_convert("Australia/Sydney"),
-                half_day + pd.Timedelta(hours=14, minutes=10),
-            )
-        for full_day in full_days:
-            full_day_close_time = self.calendar.next_close(full_day)
-            self.assertEqual(
-                full_day_close_time.tz_convert("Australia/Sydney"),
-                full_day + pd.Timedelta(hours=16),
-            )
+    # Calendar-specific tests
+
+    def test_early_close_time(self, default_calendar, early_closes_sample):
+        cal = default_calendar
+        for early_close in early_closes_sample:
+            close_time = cal.closes[early_close].tz_localize("UTC").tz_convert(cal.tz)
+            assert close_time.time() == datetime.time(14, 10)
+
+        # In 2009 the half day rules should not be in effect yet.
+        for full_day in ["2009-12-24", "2009-12-31"]:
+            close_time = cal.closes[full_day].tz_localize("UTC").tz_convert(cal.tz)
+            assert close_time.time() == datetime.time(16, 0)

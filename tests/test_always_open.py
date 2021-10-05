@@ -1,33 +1,26 @@
-from __future__ import annotations
-from collections import abc
-
 import pytest
 import pandas as pd
 import pandas.testing as tm
 from pytz import UTC
 
 from exchange_calendars.always_open import AlwaysOpenCalendar
-from exchange_calendars import ExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew, Answers
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
 
 class TestAlwaysOpenCalendar(ExchangeCalendarTestBaseNew):
     @pytest.fixture(scope="class", params=["left", "right"])
-    def all_calendars_with_answers(
-        self, request, calendars, answers
-    ) -> abc.Iterator[ExchangeCalendar, Answers]:
-        """Parameterized calendars and answers for each side."""
+    def all_calendars_with_answers(self, request, calendars, answers):
         yield (calendars[request.param], answers[request.param])
 
     @pytest.fixture(scope="class")
-    def calendar_cls(self) -> abc.Iterator[ExchangeCalendar]:
+    def calendar_cls(self):
         yield AlwaysOpenCalendar
 
     @pytest.fixture(scope="class")
-    def max_session_hours(self) -> abc.Iterator[int | float]:
+    def max_session_hours(self):
         yield 24
 
-    # Additional tests
+    # Calendar-specific tests
 
     def test_open_every_day(self, default_calendar_with_answers):
         cal, ans = default_calendar_with_answers
