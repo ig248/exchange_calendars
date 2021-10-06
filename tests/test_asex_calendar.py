@@ -34,6 +34,7 @@ class TestASEXCalendar(ExchangeCalendarTestBaseNew):
             "2019-12-24",  # Christmas Eve
             "2019-12-25",  # Christmas Day
             "2019-12-26",  # Second Day of Christmas
+            #
             # The Athens Stock Exchange observes Orthodox (or Eastern) Easter,
             # as well as Western Easter.  All holidays that are tethered to
             # Easter (i.e. Whit Monday, Good Friday, etc.), are relative to
@@ -86,7 +87,7 @@ class TestASEXCalendar(ExchangeCalendarTestBaseNew):
         yield adhocs + crisis_dates.strftime("%Y-%m-%d").to_list()
 
     @pytest.fixture(scope="class")
-    def sessions_sample(self):
+    def non_holidays_sample(self):
         yield [
             # Holidays NOT made up despite falling on weekend. Following ensures
             # surrounding days are not holidays.

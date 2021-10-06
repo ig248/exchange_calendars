@@ -1,6 +1,5 @@
-import datetime
-
 import pytest
+import pandas as pd
 
 from exchange_calendars.exchange_calendar_xasx import XASXExchangeCalendar
 from .test_exchange_calendar import ExchangeCalendarTestBaseNew
@@ -27,6 +26,7 @@ class TestXASXCalendar(ExchangeCalendarTestBaseNew):
             "2018-06-11",  # Queen's Birthday
             "2018-12-25",  # Christmas
             "2018-12-26",  # Boxing Day
+            #
             # Holidays made up when fall on weekend.
             # Anzac Day is observed on the following Monday only when falling
             # on a Sunday. In years where Anzac Day falls on a Saturday, there
@@ -47,7 +47,7 @@ class TestXASXCalendar(ExchangeCalendarTestBaseNew):
         ]
 
     @pytest.fixture(scope="class")
-    def sessions_sample(self):
+    def non_holidays_sample(self):
         # Anzac Day on a Saturday, does not have a make-up (prior to 2010).
         yield ["2015-04-27", "2004-04-26"]
 
@@ -68,15 +68,15 @@ class TestXASXCalendar(ExchangeCalendarTestBaseNew):
             "2016-12-30",
         ]
 
-    # Calendar-specific tests
+    @pytest.fixture(scope="class")
+    def early_closes_sample_time(self):
+        yield pd.Timedelta(hours=14, minutes=10)
 
-    def test_early_close_time(self, default_calendar, early_closes_sample):
-        cal = default_calendar
-        for early_close in early_closes_sample:
-            close_time = cal.closes[early_close].tz_localize("UTC").tz_convert(cal.tz)
-            assert close_time.time() == datetime.time(14, 10)
+    @pytest.fixture(scope="class")
+    def non_early_closes_sample(self):
+        # In 2009 the early close rules should not be in effect yet.
+        yield ["2009-12-24", "2009-12-31"]
 
-        # In 2009 the half day rules should not be in effect yet.
-        for full_day in ["2009-12-24", "2009-12-31"]:
-            close_time = cal.closes[full_day].tz_localize("UTC").tz_convert(cal.tz)
-            assert close_time.time() == datetime.time(16, 0)
+    @pytest.fixture(scope="class")
+    def non_early_closes_sample_time(self):
+        yield pd.Timedelta(16, "H")

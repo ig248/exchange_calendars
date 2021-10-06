@@ -37,6 +37,7 @@ class TestAIXKCalendar(ExchangeCalendarTestBaseNew):
             "2021-12-01",  # First President Day
             "2021-12-16",  # Independence Day
             "2021-12-17",  # Independence Day Holiday
+            #
             # Holiday's made up when fall on weekend.
             # Last day of Nauryz on Saturday, 23th
             "2019-03-21",

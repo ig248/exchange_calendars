@@ -32,9 +32,11 @@ class TestBVMFCalendar(ExchangeCalendarTestBaseNew):
             "2017-12-25",  # Christmas Day
             "2017-12-29",  # Day before New Years
             "2018-01-01",  # New Year's Day
+            #
             # First occurrences
             "1998-07-09",  # First occurrence of Constitutionalist Revolution holiday
             "2006-11-20",  # Day of Black Awareness
+            #
             # New Year's Eve
             # if Jan 1 is Tuesday through Saturday, exchange closed the day before.
             # if Jan 1 is Monday or Sunday, exchange closed the Friday before.
@@ -49,7 +51,7 @@ class TestBVMFCalendar(ExchangeCalendarTestBaseNew):
         yield ["2014-06-12"]  # world-cup
 
     @pytest.fixture(scope="class")
-    def sessions_sample(self):
+    def non_holidays_sample(self):
         yield [
             "1997-07-09",  # year prior to first Constitutionalist Revolution holiday
             "2003-11-20",  # year prior to first Day of Black Awareness holiday

@@ -2546,14 +2546,20 @@ class ExchangeCalendarTestBaseNew:
         there is no end bound."""
         yield None
 
+    # Subclass can optionally override the following fixtures. By overriding
+    # a fixture the associated test will be executed with input as yielded
+    # by the fixture. Where fixtures are not overriden the associated tests
+    # will be skipped.
+
     @pytest.fixture(scope="class")
     def regular_holidays_sample(self) -> abc.Iterator[list[str]]:
         """Sample of known regular calendar holidays. Empty list if no holidays.
 
-        Each holiday will be tested to ensure it is not a calendar session.
+        `test_regular_holidays_sample` will check that each date does not
+        represent a calendar session.
 
         Example return:
-            ["2015-01-01", "2015-03-18", "2015-06-01", "2015-12-25"]
+            ["2020-12-25", "2021-01-01", ...]
         """
         yield []
 
@@ -2561,51 +2567,110 @@ class ExchangeCalendarTestBaseNew:
     def adhoc_holidays_sample(self) -> abc.Iterator[list[str]]:
         """Sample of adhoc calendar holidays. Empty list if no adhoc holidays.
 
-        Each holiday will be tested to ensure it is not a calendar session.
+        `test_adhoc_holidays_sample` will check that each date does not
+        represent a calendar session.
 
         Example return:
-            ["2015-04-17", "2021-09-12"]
+            ["2015-04-17", "2021-09-12", ...]
         """
         yield []
 
     @pytest.fixture(scope="class")
-    def sessions_sample(self) -> abc.Iterator[list[str]]:
-        """Sample of known calendar sessions. Empty list if no holidays.
+    def non_holidays_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of known dates that are not holidays.
 
-        Each date will be tested to ensure it represents a calendar session.
+        `test_non_holidays_sample` will check that each date represents a
+        calendar session.
 
-        Subclass should use this fixture if wish to test edge cases, for
+        Subclass should use this fixture if wishes to test edge cases, for
         example where a session is an exception to a rule, or where session
         preceeds/follows a holiday that is an exception to a rule.
 
         Example return:
-            ["2011-02-03", "2014-05-06", "2017-08-09"]
+            ["2019-12-27", "2020-01-02", ...]
         """
         yield []
 
     @pytest.fixture(scope="class")
     def late_opens_sample(self) -> abc.Iterator[list[str]]:
-        """Sample of known calendar late opens. Empty list if no late opens.
+        """Sample of known calendar sessions with late opens.
 
-        Each date will be tested to ensure it does represent a session with
-        a late open.
+        `test_late_opens_sample` will check that each date represents a
+        session with a late open.
 
-        Example return:
-            ["2022-01-03", "2022-04-22"]
+        Example returns:
+            ["2022-01-03", "2022-04-22", ...]
         """
         yield []
 
     @pytest.fixture(scope="class")
     def early_closes_sample(self) -> abc.Iterator[list[str]]:
-        """Sample of known calendar early closes. Empty list if no early closes.
+        """Sample of known calendar sessions with early closes.
 
-        Each date will be tested to ensure it does represent a session with
-        an early close.
+        `test_early_closes_sample` will check that each date represents a
+        session with an early close.
 
-        Example return:
-            ["2021-12-24", "2021-12-31"]
+        Example returns:
+            ["2019-12-24", "2019-12-31", ...]
         """
         yield []
+
+    @pytest.fixture(scope="class")
+    def early_closes_sample_time(self) -> abc.Iterator[pd.Timedelta | None]:
+        """Local close time of sessions of `early_closes_sample` fixture.
+
+        `test_early_closes_sample_time` will check all sessions of
+        `early_closes_sample` have this close time.
+
+        Only override fixture if:
+            - `early_closes_sample` is overriden by subclass
+            - ALL sessions of `early_closes_sample` have the same local
+                close time (if sessions of `early_closes_sample` have
+                different local close times then the subclass should
+                instead check close times with a test defined on the
+                subclass).
+
+        Example returns:
+            pd.Timedelta(14, "H")  # 14:00 local time
+            pd.Timedelta(hours=13, minutes=15)  # 13:15 local time
+        """
+        yield None
+
+    @pytest.fixture(scope="class")
+    def non_early_closes_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of known calendar sessions with normal close times.
+
+        `test_non_early_closes_sample` will check each date does not
+        represent a calendar session with an early close.
+
+        Subclass should use this fixture to test edge cases, for example
+        where an otherwise early close is an exception to a rule.
+
+        Example return:
+            ["2022-12-23", "2022-12-30]
+        """
+        yield []
+
+    @pytest.fixture(scope="class")
+    def non_early_closes_sample_time(self) -> abc.Iterator[pd.Timedelta | None]:
+        """Local close time of sessions of `non_early_closes_sample` fixture.
+
+        `test_non_early_closes_sample_time` will check all sessions of
+        `non_early_closes_sample` have this close time.
+
+        Only override fixture if:
+            - `non_early_closes_sample` is overriden by subclass.
+            - ALL sessions of `non_early_closes_sample` have the same local
+                close time (if sessions of `non_early_closes_sample` have
+                different local close times then the subclass should
+                instead check close times with a test defined on the
+                subclass).
+
+        Example returns:
+            pd.Timedelta(17, "H")  # 17:00 local time
+            pd.Timedelta(hours=16, minutes=30)  # 16:30 local time
+        """
+        yield None
 
     # --- NO FIXTURE BELOW THIS LINE SHOULD BE OVERRIDEN ON A SUBCLASS ---
 
@@ -2976,7 +3041,7 @@ class ExchangeCalendarTestBaseNew:
         # make sure there's no weirdness around calculating the next day's
         # session's open time.
         if not daylight_savings_dates:
-            pass
+            pytest.skip()
 
         cal = default_calendar
         d = dict(cal.open_times)
@@ -3193,28 +3258,86 @@ class ExchangeCalendarTestBaseNew:
 
     def test_regular_holidays_sample(self, default_calendar, regular_holidays_sample):
         """Test that calendar-specific sample of holidays are not sessions."""
+        if not regular_holidays_sample:
+            pytest.skip()
         for holiday in regular_holidays_sample:
             assert T(holiday) not in default_calendar.all_sessions
 
     def test_adhoc_holidays_sample(self, default_calendar, adhoc_holidays_sample):
         """Test that calendar-specific sample of holidays are not sessions."""
+        if not adhoc_holidays_sample:
+            pytest.skip()
         for holiday in adhoc_holidays_sample:
             assert T(holiday) not in default_calendar.all_sessions
 
-    def test_sessions_sample(self, default_calendar, sessions_sample):
-        """Test that calendar-specific sample of sessions are sessions."""
-        for session in sessions_sample:
-            assert T(session) in default_calendar.all_sessions
+    def test_non_holidays_sample(self, default_calendar, non_holidays_sample):
+        """Test that calendar-specific sample of non-holidays are sessions."""
+        if not non_holidays_sample:
+            pytest.skip()
+        for date in non_holidays_sample:
+            assert T(date) in default_calendar.all_sessions
 
-    def test_late_opens_sample(self, default_calendar, late_opens_sample):
-        """Test calendar-specific sample of late opens are included to sessions."""
-        for late_open in late_opens_sample:
-            assert T(late_open) in default_calendar.late_opens
+    # NOTE: As of Oct 21 no calendar tests late opens (indeed, believe that no
+    # calendar defines late opens). Test commented out to prevent skip tests littering
+    # output. REINSTATE TEST IF any calendar defines and test late opens.
+    # def test_late_opens_sample(self, default_calendar, late_opens_sample):
+    #     """Test calendar-specific sample of sessions are included to late opens."""
+    #     if not late_opens_sample:
+    #         pytest.skip()
+    #     for date in late_opens_sample:
+    #         assert T(date) in default_calendar.late_opens
 
     def test_early_closes_sample(self, default_calendar, early_closes_sample):
-        """Test calendar-specific sample of early closes are included to sessions."""
-        for early_close in early_closes_sample:
-            assert T(early_close) in default_calendar.early_closes
+        """Test calendar-specific sample of sessions are included to early closes."""
+        if not early_closes_sample:
+            pytest.skip()
+        for date in early_closes_sample:
+            assert T(date) in default_calendar.early_closes
+
+    def test_early_closes_sample_time(
+        self, default_calendar, early_closes_sample, early_closes_sample_time
+    ):
+        """Test close time of calendar-specific sample of early closing sessions.
+
+        Notes
+        -----
+        TEST RELIES ON ACCURACY OF CALENDAR PROPERTIES `closes`, `tz` and
+        `close_offset`.
+        """
+        if early_closes_sample_time is None:
+            pytest.skip()
+        cal, tz = default_calendar, default_calendar.tz
+        offset = pd.Timedelta(cal.close_offset, "D") + early_closes_sample_time
+        for date in early_closes_sample:
+            early_close = cal.closes[date].tz_localize(UTC).tz_convert(tz)
+            expected = pd.Timestamp(date, tz=tz) + offset
+            assert early_close == expected
+
+    def test_non_early_closes_sample(self, default_calendar, non_early_closes_sample):
+        """Test calendar-specific sample of sessions are not early closes."""
+        if not non_early_closes_sample:
+            pytest.skip()
+        for date in non_early_closes_sample:
+            assert T(date) not in default_calendar.early_closes
+
+    def test_non_early_closes_sample_time(
+        self, default_calendar, non_early_closes_sample, non_early_closes_sample_time
+    ):
+        """Test close time of calendar-specific sample of sessions with normal closes.
+
+        Notes
+        -----
+        TEST RELIES ON ACCURACY OF CALENDAR PROPERTIES `closes`, `tz` and
+        `close_offset`.
+        """
+        if non_early_closes_sample_time is None:
+            pytest.skip()
+        cal, tz = default_calendar, default_calendar.tz
+        offset = pd.Timedelta(cal.close_offset, "D") + non_early_closes_sample_time
+        for date in non_early_closes_sample:
+            close = cal.closes[date].tz_localize(UTC).tz_convert(tz)
+            expected_close = pd.Timestamp(date, tz=tz) + offset
+            assert close == expected_close
 
     def test_late_opens(self, default_calendar, late_opens):
         """Test late opens.

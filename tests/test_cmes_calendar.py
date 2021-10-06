@@ -1,6 +1,5 @@
-import datetime
-
 import pytest
+import pandas as pd
 
 from exchange_calendars.exchange_calendar_cmes import CMESExchangeCalendar
 from .test_exchange_calendar import ExchangeCalendarTestBaseNew
@@ -35,10 +34,6 @@ class TestCMESCalendar(ExchangeCalendarTestBaseNew):
             "2016-11-24",  # thanksgiving
         ]
 
-    # Calendar-specific tests
-
-    def test_early_close_time(self, default_calendar, early_closes_sample):
-        cal = default_calendar
-        for early_close in early_closes_sample:
-            close_time = cal.closes[early_close].tz_localize("UTC").tz_convert(cal.tz)
-            assert close_time.time() == datetime.time(12, 0)
+    @pytest.fixture(scope="class")
+    def early_closes_sample_time(self):
+        yield pd.Timedelta(12, "H")
