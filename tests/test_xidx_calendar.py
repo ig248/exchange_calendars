@@ -1,53 +1,44 @@
-from unittest import TestCase
-
+import pytest
 import pandas as pd
-from parameterized import parameterized
-from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xidx import XIDXExchangeCalendar
-from exchange_calendars.exchange_calendar import WEEKENDS
-
-from .test_exchange_calendar import NoDSTExchangeCalendarTestBase
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
 
-class XIDXCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
+class TestXIDXCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XIDXExchangeCalendar
 
-    answer_key_filename = "xidx"
-    calendar_class = XIDXExchangeCalendar
+    @pytest.fixture
+    def max_session_hours(self):
+        yield 6 + (5 / 6)
 
-    MAX_SESSION_HOURS = 6 + (5 / 6)
+    # Calendar-specific tests
 
-    HAVE_EARLY_CLOSES = False
-
-    def test_trading_days(self):
+    def test_trading_days(self, default_calendar):
+        cal = default_calendar
         # Data obtained from https://www.idx.co.id/en-us/news/trading-holiday/
         expected_trading_days = {
             # year: (trading days in year, [trading days in each month])
-            "2016": (246, [20, 20, 21, 21, 20, 22, 16, 22, 21, 21, 22, 20]),
-            "2017": (238, [21, 19, 22, 17, 20, 15, 21, 22, 19, 22, 22, 18]),
+            2016: (246, [20, 20, 21, 21, 20, 22, 16, 22, 21, 21, 22, 20]),
+            2017: (238, [21, 19, 22, 17, 20, 15, 21, 22, 19, 22, 22, 18]),
             # XXX: The website says only 21 trading days for July 2018.
-            "2018": (240, [22, 19, 21, 21, 20, 13, 22, 21, 19, 23, 21, 18]),
-            "2019": (245, [22, 19, 20, 19, 21, 15, 23, 22, 21, 23, 21, 19]),
-            "2020": (244, [22, 20, 21, 21, 14, 21, 22, 19, 22, 21, 21, 20]),
+            2018: (240, [22, 19, 21, 21, 20, 13, 22, 21, 19, 23, 21, 18]),
+            2019: (245, [22, 19, 20, 19, 21, 15, 23, 22, 21, 23, 21, 19]),
+            2020: (244, [22, 20, 21, 21, 14, 21, 22, 19, 22, 21, 21, 20]),
         }
         for year, (total_days, monthly_days) in expected_trading_days.items():
-            # Sanity checks for the test data.
-            self.assertEqual(len(monthly_days), 12, year)
-            self.assertEqual(sum(monthly_days), total_days, year)
+            assert sum(monthly_days) == total_days  # Sanity check
 
-            start = pd.Timestamp(year=int(year), month=1, day=1, tz="UTC")
-            end = min(
-                pd.Timestamp(year=int(year), month=12, day=31, tz="UTC"),
-                self.calendar.last_session
-            )
-            sessions = self.calendar.sessions_in_range(start, end)
-            self.assertEqual(total_days, len(sessions), year)
+            sessions = cal.all_sessions[cal.all_sessions.year == year]
+            assert total_days == len(sessions), year
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "year, holidays",
         [
             (
-                "2019-01-01",
-                "2019-12-31",
+                2019,
                 [
                     "2019-01-01",  # New Year 2019
                     "2019-02-05",  # Chinese New Year 2570 Kongzili
@@ -68,12 +59,11 @@ class XIDXCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
                 ],
             ),
             (
-                "2018-01-01",
-                "2018-12-31",
+                2018,
                 [
                     "2018-01-01",  # New Year 2018
                     "2018-02-16",  # Chinese New Year 2569 Kongzili
-                    "2018-03-17",  # Hindu Saka New Year 1940
+                    "2018-03-17",  # Hindu Saka New Year 1940.
                     "2018-03-30",  # Good Friday
                     "2018-04-14",  # Isra Mikraj of Prophet Muhammad SAW
                     "2018-05-01",  # Labor Day
@@ -96,50 +86,19 @@ class XIDXCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
                     "2018-12-31",  # Trading Holiday
                 ],
             ),
-        ]
+        ],
     )
-    def test_holidays_in_date_range(self, start, end, holiday_dates):
-        holidays = {pd.Timestamp(d, tz=UTC) for d in holiday_dates}
-        date_range = pd.date_range(start=start, end=end, tz="UTC")
+    def test_holidays_in_year(self, default_calendar, year, holidays):
+        cal = default_calendar
+        days = pd.date_range(start=f"{year}-01-01", end=f"{year}-12-31", freq="B")
+        days = days.strftime("%Y-%m-%d")
 
-        # Sanity check for the test inputs.
         for holiday in holidays:
-            if holiday not in date_range:
-                raise ValueError("{} not in {}".format(holiday, date_range))
+            # Sanity check
+            assert holiday in days or pd.Timestamp(holiday).weekday() in (5, 6)
 
-        sessions_on_holidays = {
-            holiday for holiday in holidays if self.calendar.is_session(holiday)
-        }
-
-        missing_sessions = {
-            day
-            for day in date_range
-            if not self.calendar.is_session(day)
-            and day.dayofweek not in WEEKENDS
-            and day not in holidays
-        }
-
-        errors = sessions_on_holidays | missing_sessions
-        if errors:
-
-            def print_info(timestamps, msg):
-                if timestamps:
-                    print(msg)
-                    for ts in sorted(timestamps):
-                        print(ts.date())
-
-            print_info(
-                sessions_on_holidays,
-                "\n{} session(s) were marked as holidays in the"
-                " test data, but were listed as sessions by the"
-                " calendar:".format(len(sessions_on_holidays)),
-            )
-
-            print_info(
-                missing_sessions,
-                "\n{} weekday(s) were not listed as sessions by the"
-                " calendar, but were also not marked as holidays in the"
-                " test data:".format(len(missing_sessions)),
-            )
-
-            self.fail("{} error(s) between {} and {}".format(len(errors), start, end))
+        for day in days:
+            if day in holidays:
+                assert not cal.is_session(day)
+            else:
+                assert cal.is_session(day)

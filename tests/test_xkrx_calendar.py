@@ -1,175 +1,122 @@
-from unittest import TestCase
-
+import pytest
 import pandas as pd
-import pandas.testing as tm
 
 from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
-
-from .test_exchange_calendar import NoDSTExchangeCalendarTestBase
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 from .test_utils import T
 
 
-class XKRXCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
+class TestXKRXCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XKRXExchangeCalendar
 
-    answer_key_filename = "xkrx"
-    answer_key_filename_old = "xkrx_old"
+    @pytest.fixture
+    def start_bound(self):
+        yield T("1956-01-01")
 
-    calendar_class = XKRXExchangeCalendar
+    @pytest.fixture
+    def end_bound(self):
+        yield T("2050-12-31")
 
-    START_BOUND = T("1956-01-01")
-    END_BOUND = T("2050-12-31")
+    @pytest.fixture
+    def max_session_hours(self):
+        # Korea exchange is open from 9am to 3:30pm
+        yield 6.5
 
-    # Korea exchange is open from 9am to 3:30pm
-    MAX_SESSION_HOURS = 6.5
-    HAVE_EARLY_CLOSES = False
-
-    # has breaks prior to 2000-05-22
-    HAVE_BREAKS = True
-
-    @classmethod
-    def setup_class(cls):
-        super().setup_class()
-        cls.answers_old = cls.load_answer_key(cls.answer_key_filename_old)
-
-    @classmethod
-    def teardown_class(cls):
-        super().teardown_class()
-        cls.answers_old = None
-
-    def test_normal_year(self):
-        expected_holidays_2017 = [
-            T("2017-01-27"),
-            T("2017-01-30"),
-            T("2017-03-01"),
-            T("2017-05-01"),
-            T("2017-05-03"),
-            T("2017-05-05"),
-            T("2017-05-09"),
-            T("2017-06-06"),
-            T("2017-08-15"),
-            T("2017-10-02"),
-            T("2017-10-03"),
-            T("2017-10-04"),
-            T("2017-10-05"),
-            T("2017-10-06"),
-            T("2017-10-09"),
-            T("2017-12-25"),
-            T("2017-12-29"),
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        yield [
+            # 2017
+            "2017-01-27",
+            "2017-01-30",
+            "2017-03-01",
+            "2017-05-01",
+            "2017-05-03",
+            "2017-05-05",
+            "2017-05-09",
+            "2017-06-06",
+            "2017-08-15",
+            "2017-10-02",
+            "2017-10-03",
+            "2017-10-04",
+            "2017-10-05",
+            "2017-10-06",
+            "2017-10-09",
+            "2017-12-25",
+            "2017-12-29",
+            #
+            "2010-06-06",  # Memorial Day on Sunday
+            #
+            # Chuseok holidays falling on a weekend and subsequently made up.
+            "2014-09-10",  # falls on Sunday, made up following Wednesday
+            "2015-09-29",  # falls on Saturday, made up following Tuesday
+            "2017-10-06",
+            #
+            "2013-10-09",  # Hangeul_day, observance commenced this year
+            #
+            # Revised alternate holiday rule
+            # Since 2021-08-04, the alternative holiday rule, which previously
+            # applied to Children's Day only, now also applies to the followings:
+            #  - Independence Movement Day (03-01)
+            #  - National Liberation Day (08-15)
+            #  - Korean National Foundation Day (10-03)
+            #  - Hangul Proclamation Day (10-09)
+            # National Liberation Day on Sunday
+            # so the next monday becomes alternative holiday
+            "2021-08-16",
+            # Korean National Foundation Day on Sunday
+            # so the next monday becomes alternative holiday
+            "2021-10-04",
+            # Hangul Proclamation Day on Saturday
+            # so the next monday becomes alternative holiday
+            "2021-10-11",
         ]
 
-        for session_label in expected_holidays_2017:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
-
-    def test_calculated_against_old_csv(self):
-        start_date = T(
-            "1998-12-07"
-        )  # the current weekmask (1111100) applies since 1998-12-07
-        start_date = max(start_date, self.calendar.default_start)
-        end_date = T("2021-08-15")  # old answer csv file has index until 2021
-        answers_old = self.answers_old.index
-        answers_old = answers_old[answers_old.slice_indexer(start_date, end_date)]
-        schedule = self.calendar.schedule.index
-        schedule = schedule[schedule.slice_indexer(start_date, end_date)]
-        tm.assert_index_equal(answers_old, schedule)
-
-    def test_holidays_fall_on_weekend(self):
-        # Holidays below falling on a weekend should
-        # not be made up during the week.
-        expected_holidays = [
-            # Memorial Day on Sunday
-            T("2010-06-06"),
-        ]
-
-        for session_label in expected_holidays:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
-
-        expected_sessions = [
+    @pytest.fixture
+    def non_holidays_sample(self):
+        yield [
+            # Holidays that fall on a weekend and are not made up. Ensure surrounding
+            # days are not holidays.
             # National Foundation Day on a Saturday, so check
             # Friday and Monday surrounding it
-            T("2015-10-02"),
-            T("2015-10-05"),
+            "2015-10-02",
+            "2015-10-05",
             # Christmas Day on a Saturday
             # Same as Foundation Day idea
-            T("2010-12-24"),
-            T("2010-12-27"),
+            "2010-12-24",
+            "2010-12-27",
+            #
+            "2012-10-09",  # Hangeul_day, last year before observance commenced.
         ]
 
-        for session_label in expected_sessions:
-            self.assertIn(session_label, self.calendar.all_sessions)
+    # TODO Issue #94
+    def test_late_opens(self, default_calendar, late_opens):
+        # overrides base to mark as xfail
+        msg = "Calendar has late opens although `late_opens` is empty. Issue #94"
+        pytest.xfail(msg)
 
-        # Holidays below falling on a weekend should
-        # be made up during the week.
-        expected_holidays = [
-            # Chuseok (Korean Thanksgiving) falls on Sunday through Wednesday
-            # but Wednesday (below) the exchange is closed; meant to give
-            # people an extra day off rather than letting the Sunday count
-            T("2014-09-10"),
-            # Chuseok (Korean Thanksgiving) falls on Saturday through Tuesday
-            # but Tuesday (below) the exchange is closed; meant to give
-            # people an extra day off rather than letting the Saturday count
-            T("2015-09-29"),
-            # Chuseok again; similar reasoning as above
-            T("2017-10-06"),
-        ]
+    # Calendar-specific tests
 
-        for session_label in expected_holidays:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
+    def test_historical_regular_holidays_fall_into_precomputed_holidays(
+        self,
+        default_calendar,
+    ):
+        cal = default_calendar
+        precomputed = pd.DatetimeIndex(cal.adhoc_holidays)
+        # precomputed holidays should not include weekends (saturday, sunday)
+        assert (precomputed.weekday < 5).all()
 
-    def test_hangeul_day_2013_onwards(self):
-
-        expected_hangeul_day = T("2013-10-09")
-        unexpected_hangeul_day = T("2012-10-09")
-
-        self.assertNotIn(expected_hangeul_day, self.calendar.all_sessions)
-        self.assertIn(unexpected_hangeul_day, self.calendar.all_sessions)
-
-    def test_historical_regular_holidays_fall_into_precomputed_holidays(self):
-        precomputed_holidays = pd.DatetimeIndex(self.calendar.adhoc_holidays)
-
-        # precomputed holidays won't include weekends (saturday, sunday)
-        self.assertTrue(all(d.weekday() < 5 for d in precomputed_holidays))
-
-        generated_holidays = self.calendar.regular_holidays.holidays(
-            precomputed_holidays.min(),
+        regular = cal.regular_holidays.holidays(
+            precomputed.min(),
             pd.Timestamp("2021-08-15"),
             return_name=True,
         )
 
-        # generated holidays include weekends
-        self.assertFalse(all(d.weekday() < 5 for d in generated_holidays.index))
-
         # filter non weekend generated holidays
-        non_weekend_mask = pd.DatetimeIndex(
-            [d for d in generated_holidays.index if d.weekday() < 5]
-        )
-        non_weekend_generated_holidays = generated_holidays[non_weekend_mask]
+        non_weekend_regular = regular[regular.index.weekday < 5]
 
-        # generated holidays should generally fall into one of the precomputed holidays
+        # regular holidays should generally fall into one of the precomputed holidays
         # except the future holidays that are not precomputed yet
-        isin = non_weekend_generated_holidays.index.isin(precomputed_holidays)
-        missing = non_weekend_generated_holidays[~isin]
-
-        self.assertTrue(all(isin), "missing holidays = \n%s" % missing)
-
-    def test_revised_alternative_holiday_rule(self):
-        # Since 2021-08-04, the alternative holiday rule, which previously
-        # applied to Children's Day only, now also applies to the followings:
-        #  - Independence Movement Day (03-01)
-        #  - National Liberation Day (08-15)
-        #  - Korean National Foundation Day (10-03)
-        #  - Hangul Proclamation Day (10-09)
-
-        expected_holidays = [
-            # National Liberation Day on Sunday
-            # so the next monday becomes alternative holiday
-            T("2021-08-16"),
-            # Korean National Foundation Day on Sunday
-            # so the next monday becomes alternative holiday
-            T("2021-10-04"),
-            # Hangul Proclamation Day on Saturday
-            # so the next monday becomes alternative holiday
-            T("2021-10-11"),
-        ]
-
-        for session_label in expected_holidays:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
+        bv = non_weekend_regular.index.isin(precomputed)
+        assert bv.all(), f"missing holidays = \n{non_weekend_regular[~bv]}"

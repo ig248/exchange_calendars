@@ -1,31 +1,39 @@
-from datetime import datetime
-from unittest import TestCase
-
+import pytest
 import pandas as pd
-from parameterized import parameterized
-from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xkar import XKARExchangeCalendar
-from exchange_calendars.exchange_calendar import WEEKENDS
-
-from .test_exchange_calendar import NoDSTExchangeCalendarTestBase
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
 
-class XKARCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
+class TestXKARCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XKARExchangeCalendar
 
-    answer_key_filename = "xkar"
-    calendar_class = XKARExchangeCalendar
+    @pytest.fixture
+    def max_session_hours(self):
+        yield 5.967
 
-    MAX_SESSION_HOURS = 5.967
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        # iqbal day observed until 2014 (last year of observance 2013)
+        yield [f"{year}-11-09" for year in range(2002, 2014)]
 
-    HAVE_EARLY_CLOSES = False
+    @pytest.fixture
+    def non_holidays_sample(self):
+        # iqbal day not observed from 2014
+        yield [
+            f"{year}-11-09"
+            for year in range(2014, 2019)
+            if pd.Timestamp(f"{year}-11-09").weekday() not in (5, 6)
+        ]
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "year, holidays",
         [
             # https://www.psx.com.pk/psx/exchange/general/calendar-holidays
             (
-                "2019-01-01",
-                "2019-12-31",
+                2019,
                 [
                     "2019-02-05",  # Kashmir Day
                     "2019-03-23",  # Pakistan Day
@@ -45,61 +53,19 @@ class XKARCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
                     "2019-12-25",  # Birthday of Quaid-e-Azam & Christmas
                 ],
             ),
-        ]
+        ],
     )
-    def test_holidays_in_date_range(self, start, end, holiday_dates):
-        holidays = {pd.Timestamp(d, tz=UTC) for d in holiday_dates}
-        date_range = pd.date_range(start=start, end=end, tz="UTC")
+    def test_holidays_in_year(self, default_calendar, year, holidays):
+        cal = default_calendar
+        days = pd.date_range(start=f"{year}-01-01", end=f"{year}-12-31", freq="B")
+        days = days.strftime("%Y-%m-%d")
 
-        # Sanity check for the test inputs.
         for holiday in holidays:
-            if holiday not in date_range:
-                raise ValueError("{} not in {}".format(holiday, date_range))
+            # Sanity check
+            assert holiday in days or pd.Timestamp(holiday).weekday() in (5, 6)
 
-        sessions_on_holidays = {
-            holiday for holiday in holidays if self.calendar.is_session(holiday)
-        }
-
-        missing_sessions = {
-            day
-            for day in date_range
-            if not self.calendar.is_session(day)
-            and day.dayofweek not in WEEKENDS
-            and day not in holidays
-        }
-
-        errors = sessions_on_holidays | missing_sessions
-        if errors:
-
-            def print_info(timestamps, msg):
-                if timestamps:
-                    print(msg)
-                    for ts in sorted(timestamps):
-                        print(ts.date())
-
-            print_info(
-                sessions_on_holidays,
-                "\n{} session(s) were marked as holidays in the"
-                " test data, but were listed as sessions by the"
-                " calendar:".format(len(sessions_on_holidays)),
-            )
-
-            print_info(
-                missing_sessions,
-                "\n{} weekday(s) were not listed as sessions by the"
-                " calendar, but were also not marked as holidays in the"
-                " test data:".format(len(missing_sessions)),
-            )
-
-            self.fail("{} error(s) between {} and {}".format(len(errors), start, end))
-
-    def test_iqbal_day(self):
-        for year in range(2002, 2014):
-            # The datetime wrapper is required for Pandas 0.18.1
-            iqbal_day = pd.Timestamp(datetime(year=year, month=11, day=9))
-            is_session = self.calendar.is_session(iqbal_day)
-            is_weekend = iqbal_day.dayofweek in WEEKENDS
-            if year <= 2013:
-                self.assertFalse(is_session, iqbal_day)
+        for day in days:
+            if day in holidays:
+                assert not cal.is_session(day)
             else:
-                self.assertTrue(is_session or is_weekend, iqbal_day)
+                assert cal.is_session(day)

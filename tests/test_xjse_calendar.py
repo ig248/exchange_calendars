@@ -1,35 +1,30 @@
-from unittest import TestCase
+import pytest
 
 import pandas as pd
-from parameterized import parameterized
-from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xjse import XJSEExchangeCalendar
-from exchange_calendars.exchange_calendar import WEEKENDS
-
-from .test_exchange_calendar import NoDSTExchangeCalendarTestBase
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
 
-class XJSECalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
+class TestXJSECalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XJSEExchangeCalendar
 
-    answer_key_filename = "xjse"
-    calendar_class = XJSEExchangeCalendar
+    @pytest.fixture
+    def max_session_hours(self):
+        # The JSE is open from 09:00 to 17:00.
+        yield 8
 
-    # The JSE is open from 09:00 to 17:00.
-    MAX_SESSION_HOURS = 8
+    def test_no_weekend_sessions(self, default_calendar):
+        bv = default_calendar.all_sessions.weekday.isin((5, 6))
+        assert default_calendar.all_sessions[bv].empty
 
-    HAVE_EARLY_CLOSES = False
-
-    def test_no_weekend_sessions(self):
-        for session in self.calendar.all_sessions:
-            self.assertNotIn(session.dayofweek, WEEKENDS, session)
-            self.assertTrue(self.calendar.is_session(session), session)
-
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "year, holidays",
         [
             (
-                "2019-01-01",
-                "2019-12-31",
+                2019,
                 [
                     "2019-01-01",  # New Year's Day
                     "2019-03-21",  # Human Rights Day
@@ -48,8 +43,7 @@ class XJSECalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
                 ],
             ),
             (
-                "2018-01-01",
-                "2018-12-31",
+                2018,
                 [
                     "2018-01-01",  # New Year's Day
                     "2018-03-21",  # Human Rights Day
@@ -67,8 +61,7 @@ class XJSECalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
                 ],
             ),
             (
-                "2016-01-01",
-                "2016-12-31",
+                2016,
                 [
                     "2016-01-01",  # New Year's Day
                     "2016-03-21",  # Human Rights Day
@@ -87,23 +80,19 @@ class XJSECalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
                     "2016-12-27",  # Day of Goodwill (Ad-hoc make-up observance)
                 ],
             ),
-        ]
+        ],
     )
-    def test_holidays_in_date_range(self, start, end, holiday_dates):
-        holidays = {pd.Timestamp(d, tz=UTC) for d in holiday_dates}
-        date_range = pd.date_range(start=start, end=end, tz="UTC")
+    def test_holidays_in_year(self, default_calendar, year, holidays):
+        cal = default_calendar
+        days = pd.date_range(start=f"{year}-01-01", end=f"{year}-12-31", freq="B")
+        days = days.strftime("%Y-%m-%d")
 
         for holiday in holidays:
-            self.assertIn(holiday, date_range)
-            self.assertFalse(self.calendar.is_session(holiday), holiday)
+            # Sanity check
+            assert holiday in days or pd.Timestamp(holiday).weekday() in (5, 6)
 
-        for session in self.calendar.all_sessions:
-            self.assertNotIn(session, holidays)
-
-        # Make sure we caught all the holidays.
-        for day in date_range:
-            is_holiday = day in holidays
-            is_weekend = day.dayofweek in WEEKENDS
-            should_be_session = not is_holiday and not is_weekend
-            is_session = self.calendar.is_session(day)
-            self.assertEqual(should_be_session, is_session, day)
+        for day in days:
+            if day in holidays:
+                assert not cal.is_session(day)
+            else:
+                assert cal.is_session(day)

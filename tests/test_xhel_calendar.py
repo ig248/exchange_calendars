@@ -1,79 +1,68 @@
-from unittest import TestCase
-
-import pandas as pd
-from pytz import UTC
+import pytest
 
 from exchange_calendars.exchange_calendar_xhel import XHELExchangeCalendar
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
-from .test_exchange_calendar import ExchangeCalendarTestBase
 
+class TestXHELCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XHELExchangeCalendar
 
-class XHELCalendarTestCase(ExchangeCalendarTestBase, TestCase):
+    @pytest.fixture
+    def max_session_hours(self):
+        yield 8.5
 
-    answer_key_filename = "xhel"
-    calendar_class = XHELExchangeCalendar
-
-    # The XHEL is open from 10:00 am to 6:30 pm.
-    MAX_SESSION_HOURS = 8.5
-
-    HAVE_EARLY_CLOSES = False
-
-    def test_all_holidays(self):
-        all_sessions = self.calendar.all_sessions
-
-        expected_holidays = [
-            pd.Timestamp("2018-01-01", tz=UTC),  # New Year's Day
-            pd.Timestamp("2017-01-06", tz=UTC),  # Epiphany
-            pd.Timestamp("2018-03-30", tz=UTC),  # Good Friday
-            pd.Timestamp("2018-04-02", tz=UTC),  # Easter Monday
-            pd.Timestamp("2018-05-01", tz=UTC),  # Labour Day
-            pd.Timestamp("2018-05-10", tz=UTC),  # Ascension Day
-            pd.Timestamp("2018-06-22", tz=UTC),  # Midsummer Eve
-            pd.Timestamp("2018-12-06", tz=UTC),  # Finland Independence Day
-            pd.Timestamp("2018-12-24", tz=UTC),  # Christmas Eve
-            pd.Timestamp("2018-12-25", tz=UTC),  # Christmas Day
-            pd.Timestamp("2018-12-26", tz=UTC),  # Boxing Day
-            pd.Timestamp("2018-12-31", tz=UTC),  # New Year's Eve
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        yield [
+            "2018-01-01",  # New Year's Day
+            "2017-01-06",  # Epiphany
+            "2018-03-30",  # Good Friday
+            "2018-04-02",  # Easter Monday
+            "2018-05-01",  # Labour Day
+            "2018-05-10",  # Ascension Day
+            "2018-06-22",  # Midsummer Eve
+            "2018-12-06",  # Finland Independence Day
+            "2018-12-24",  # Christmas Eve
+            "2018-12-25",  # Christmas Day
+            "2018-12-26",  # Boxing Day
+            "2018-12-31",  # New Year's Ev
+            # Midsummer Eve falls on Friday following June 18th.
+            "2010-06-25",  # fell prior Friday June 18th
+            "2017-06-23",  # fell prior Sunday
         ]
 
-        for session_label in expected_holidays:
-            self.assertNotIn(session_label, all_sessions)
+    @pytest.fixture
+    def adhoc_holidays_sample(self):
+        yield []
 
-        # The market holiday for Midsummer Eve should fall on the Friday after
-        # June 18. In 2010, June 18 was a Friday so the market holiday should
-        # be on June 25.
-        self.assertIn(pd.Timestamp("2010-06-18", tz=UTC), all_sessions)
-        self.assertNotIn(pd.Timestamp("2010-06-25", tz=UTC), all_sessions)
-
-    def test_holidays_fall_on_weekend(self):
-        all_sessions = self.calendar.all_sessions
-
-        # Holidays falling on a weekend should not be made up during the week.
-        expected_sessions = [
+    @pytest.fixture
+    def non_holidays_sample(self):
+        yield [
+            # Midsummer Eve falls on Friday following June 18th. In 2010, June 18th was
+            # a Friday - check not a holiday (holiday is following Friday, June 25th).
+            "2010-06-18",
+            #
+            # Holidays that fall on a weekend are not made up. Ensure surrounding
+            # days are not holidays.
             # In 2018, the Epiphany fell on a Saturday, so the market should be
             # open on both the prior Friday and the following Monday.
-            pd.Timestamp("2018-01-05", tz=UTC),
-            pd.Timestamp("2018-01-08", tz=UTC),
+            "2018-01-05",
+            "2018-01-08",
             # In 2010, Labour Day fell on a Saturday, so the market should be
             # open on both the prior Friday and the following Monday.
-            pd.Timestamp("2010-04-30", tz=UTC),
-            pd.Timestamp("2010-05-03", tz=UTC),
+            "2010-04-30",
+            "2010-05-03",
             # In 2015, Finland Independence Day fell on a Sunday, so the market
             # should be open on both the prior Friday and the following Monday.
-            pd.Timestamp("2015-12-04", tz=UTC),
-            pd.Timestamp("2015-12-07", tz=UTC),
+            "2015-12-04",
+            "2015-12-07",
             # In 2010, Christmas fell on a Saturday, meaning Boxing Day fell on
             # a Sunday. The market should thus be open on the following Monday.
-            pd.Timestamp("2010-12-27", tz=UTC),
+            "2010-12-27",
             # In 2017, New Year's Day fell on a Sunday, so the market should be
             # open on both the prior Friday and the following Monday.
-            pd.Timestamp("2016-12-30", tz=UTC),
-            pd.Timestamp("2017-01-02", tz=UTC),
+            "2016-12-30",
+            "2017-01-02",
         ]
-
-        for session_label in expected_sessions:
-            self.assertIn(session_label, self.calendar.all_sessions)
-
-        # In 2017, June 18 fell on a Sunday, so the following Friday should be
-        # a holiday.
-        self.assertNotIn(pd.Timestamp("2017-06-23", tz=UTC), all_sessions)

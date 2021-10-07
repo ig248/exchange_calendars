@@ -1,122 +1,95 @@
-from unittest import TestCase
-
+import pytest
 import pandas as pd
-from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xist import XISTExchangeCalendar
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
-from .test_exchange_calendar import NoDSTExchangeCalendarTestBase
 
+class TestXISTCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XISTExchangeCalendar
 
-class XISTCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
+    @pytest.fixture
+    def max_session_hours(self):
+        # The XIST is open from 10:00 am to 6:00 pm
+        yield 8
 
-    answer_key_filename = "xist"
-    calendar_class = XISTExchangeCalendar
-
-    # The XIST is open from 10:00 am to 6:00 pm
-    MAX_SESSION_HOURS = 8.0
-
-    def test_regular_holidays(self):
-        all_sessions = self.calendar.all_sessions
-
-        expected_holidays = [
-            pd.Timestamp("2019-01-01", tz=UTC),  # New Year's Day
-            pd.Timestamp("2019-04-23", tz=UTC),  # Natl Sov and Children's Day
-            pd.Timestamp("2019-05-01", tz=UTC),  # Labour Day
-            pd.Timestamp("2017-05-19", tz=UTC),  # CAYS Day
-            pd.Timestamp("2019-06-04", tz=UTC),  # Eid al Fitr Day 1
-            pd.Timestamp("2019-06-05", tz=UTC),  # Eid al Fitr Day 2
-            pd.Timestamp("2019-06-06", tz=UTC),  # Eid al Fitr Day 3
-            pd.Timestamp("2019-07-15", tz=UTC),  # Dem and Natl Unity Day
-            pd.Timestamp("2016-09-12", tz=UTC),  # Eid al Adha Day 1
-            pd.Timestamp("2016-09-13", tz=UTC),  # Eid al Adha Day 2
-            pd.Timestamp("2016-09-14", tz=UTC),  # Eid al Adha Day 3
-            pd.Timestamp("2016-09-15", tz=UTC),  # Eid al Adha Day 4
-            pd.Timestamp("2019-08-30", tz=UTC),  # Victory Day
-            pd.Timestamp("2019-10-29", tz=UTC),  # Republic Day
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        yield [
+            "2019-01-01",  # New Year's Day
+            "2019-04-23",  # Natl Sov and Children's Day
+            "2019-05-01",  # Labour Day
+            "2017-05-19",  # CAYS Day
+            "2019-06-04",  # Eid al Fitr Day 1
+            "2019-06-05",  # Eid al Fitr Day 2
+            "2019-06-06",  # Eid al Fitr Day 3
+            "2019-07-15",  # Dem and Natl Unity Day
+            "2016-09-12",  # Eid al Adha Day 1
+            "2016-09-13",  # Eid al Adha Day 2
+            "2016-09-14",  # Eid al Adha Day 3
+            "2016-09-15",  # Eid al Adha Day 4
+            "2019-08-30",  # Victory Day
+            "2019-10-29",  # Republic Day
         ]
 
-        for holiday_label in expected_holidays:
-            self.assertNotIn(holiday_label, all_sessions)
-
-    def test_holidays_fall_on_weekend(self):
-        all_sessions = self.calendar.all_sessions
-
-        # All holidays falling on a weekend should not be made up, so verify
-        # that the surrounding Fridays/Mondays are trading days.
-        expected_sessions = [
-            # New Year's Day on Sunday, Jan 1st.
-            pd.Timestamp("2011-12-30", tz=UTC),
-            pd.Timestamp("2012-01-02", tz=UTC),
-            # Natl Sovereignty and Children's Day on Sunday, Apr 23rd.
-            pd.Timestamp("2017-04-21", tz=UTC),
-            pd.Timestamp("2017-04-24", tz=UTC),
-            # Labour Day on Sunday, May 1st.
-            pd.Timestamp("2016-04-29", tz=UTC),
-            pd.Timestamp("2016-05-02", tz=UTC),
-            # Com. of Attaturk Youth and Sport's Day on Saturday, May 19th.
-            pd.Timestamp("2018-05-18", tz=UTC),
-            pd.Timestamp("2018-05-21", tz=UTC),
-            # Eid Al Fitr (Day 3) on Sunday, Jun 17th (Friday is a holiday).
-            pd.Timestamp("2018-06-18", tz=UTC),
-            # Democracy and National Unity Day on Sunday, Jul 15th.
-            pd.Timestamp("2018-08-13", tz=UTC),
-            pd.Timestamp("2018-07-16", tz=UTC),
-            # Eid Al Adha (Day 1) on Sunday, Aug 11th (Monday is a holiday).
-            pd.Timestamp("2019-08-09", tz=UTC),
-            # Victory Day on Saturday, Aug 30th.
-            pd.Timestamp("2014-08-29", tz=UTC),
-            pd.Timestamp("2014-09-01", tz=UTC),
-            # Republic Day on Saturday, Oct 29th.
-            pd.Timestamp("2016-10-28", tz=UTC),
-            pd.Timestamp("2016-10-31", tz=UTC),
-        ]
-
-        for session_label in expected_sessions:
-            self.assertIn(session_label, all_sessions)
-
-    def test_early_closes(self):
-        # The session label and close time for expected early closes.
-        expected_early_closes = [
-            # Day before Republic Day.
-            (
-                pd.Timestamp("2019-10-28", tz=UTC),
-                pd.Timestamp("2019-10-28 12:30", tz="Europe/Istanbul"),
-            ),
-            # Day before Eid al Fitr.
-            (
-                pd.Timestamp("2019-06-03", tz=UTC),
-                pd.Timestamp("2019-06-03 12:30", tz="Europe/Istanbul"),
-            ),
-            # Day before Eid al Adha.
-            (
-                pd.Timestamp("2018-08-20", tz=UTC),
-                pd.Timestamp("2018-08-20 12:30", tz="Europe/Istanbul"),
-            ),
-        ]
-
-        for session, expected_close in expected_early_closes:
-            self.assertEqual(
-                self.calendar.session_close(session),
-                expected_close,
-            )
-
-    def test_adhoc_holidays(self):
-        all_sessions = self.calendar.all_sessions
-
-        expected_holidays = [
+    @pytest.fixture
+    def adhoc_holidays_sample(self):
+        yield [
             # Miscellaneous closures
-            pd.Timestamp("2002-01-04", tz=UTC),  # Market Holiday
-            pd.Timestamp("2003-11-21", tz=UTC),  # Terror attacks
-            pd.Timestamp("2004-01-23", tz=UTC),  # Bad weather
-            pd.Timestamp("2004-12-30", tz=UTC),  # Closure for redenomination
-            pd.Timestamp("2004-12-31", tz=UTC),  # Closure for redenomination
+            "2002-01-04",  # Market Holiday
+            "2003-11-21",  # Terror attacks
+            "2004-01-23",  # Bad weather
+            "2004-12-30",  # Closure for redenomination
+            "2004-12-31",  # Closure for redenomination
             # Eid al Adha and Eid al Fitr extra closures
-            pd.Timestamp("2003-02-14", tz=UTC),  # Eid al Adha extra holiday
-            pd.Timestamp("2003-11-24", tz=UTC),  # Eid al Fitr extra holiday
-            pd.Timestamp("2003-11-28", tz=UTC),  # Eid al Fitr extra holiday
-            pd.Timestamp("2006-01-13", tz=UTC),  # Eid al Adha extra holiday
+            "2003-02-14",  # Eid al Adha extra holiday
+            "2003-11-24",  # Eid al Fitr extra holiday
+            "2003-11-28",  # Eid al Fitr extra holiday
+            "2006-01-13",  # Eid al Adha extra holiday
         ]
 
-        for holiday_label in expected_holidays:
-            self.assertNotIn(holiday_label, all_sessions)
+    @pytest.fixture
+    def non_holidays_sample(self):
+        yield [
+            # Holidays that fall on a weekend are not made up. Ensure surrounding
+            # days are not holidays.
+            # New Year's Day on Sunday, Jan 1st.
+            "2011-12-30",
+            "2012-01-02",
+            # Natl Sovereignty and Children's Day on Sunday, Apr 23rd.
+            "2017-04-21",
+            "2017-04-24",
+            # Labour Day on Sunday, May 1st.
+            "2016-04-29",
+            "2016-05-02",
+            # Com. of Attaturk Youth and Sport's Day on Saturday, May 19th.
+            "2018-05-18",
+            "2018-05-21",
+            # Eid Al Fitr (Day 3) on Sunday, Jun 17th (Friday is a holiday).
+            "2018-06-18",
+            # Democracy and National Unity Day on Sunday, Jul 15th.
+            "2018-08-13",
+            "2018-07-16",
+            # Eid Al Adha (Day 1) on Sunday, Aug 11th (Monday is a holiday).
+            "2019-08-09",
+            # Victory Day on Saturday, Aug 30th.
+            "2014-08-29",
+            "2014-09-01",
+            # Republic Day on Saturday, Oct 29th.
+            "2016-10-28",
+            "2016-10-31",
+        ]
+
+    @pytest.fixture
+    def early_closes_sample(self):
+        yield [
+            "2019-10-28",  # Day before Republic Day.
+            "2019-06-03",  # Day before Eid al Adha.
+            "2018-08-20",  # Day before Eid al Adha.
+        ]
+
+    @pytest.fixture
+    def early_closes_sample_time(self):
+        yield pd.Timedelta(hours=12, minutes=30)
