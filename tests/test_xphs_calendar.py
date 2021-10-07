@@ -1,137 +1,111 @@
-from unittest import TestCase
-
-import pandas as pd
-from pytz import UTC
+import pytest
 
 from exchange_calendars.exchange_calendar_xphs import XPHSExchangeCalendar
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
-from .test_exchange_calendar import NoDSTExchangeCalendarTestBase
 
+class TestXPHSCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XPHSExchangeCalendar
 
-class XPHSCalendarTestCase(NoDSTExchangeCalendarTestBase, TestCase):
+    @pytest.fixture
+    def max_session_hours(self):
+        # The XPHS is open from 9:30AM to 3:30PM
+        yield 6
 
-    answer_key_filename = "xphs"
-    calendar_class = XPHSExchangeCalendar
-
-    # The XPHS is open from 9:30AM to 3:30PM
-    MAX_SESSION_HOURS = 6.0
-
-    HAVE_EARLY_CLOSES = False
-
-    def test_regular_holidays(self):
-        all_sessions = self.calendar.all_sessions
-
-        expected_holidays = [
-            pd.Timestamp("2019-01-01", tz=UTC),  # New Year's Day
-            pd.Timestamp("2019-02-05", tz=UTC),  # Chinese New Year
-            pd.Timestamp("2019-04-09", tz=UTC),  # Araw Ng Kagitingan
-            pd.Timestamp("2019-04-18", tz=UTC),  # Maundy Thursday
-            pd.Timestamp("2019-05-01", tz=UTC),  # Labour Day
-            pd.Timestamp("2019-06-05", tz=UTC),  # Eid al-Fitr
-            pd.Timestamp("2019-06-12", tz=UTC),  # Independence Day
-            pd.Timestamp("2019-08-12", tz=UTC),  # Eid al-Adha
-            pd.Timestamp("2019-08-21", tz=UTC),  # Ninoy Aquino Day
-            pd.Timestamp("2019-08-26", tz=UTC),  # National Heroes Day
-            pd.Timestamp("2017-09-01", tz=UTC),  # Eid al-Adha
-            pd.Timestamp("2019-11-01", tz=UTC),  # All Saint's Day
-            pd.Timestamp("2018-11-30", tz=UTC),  # Bonifacio Day
-            pd.Timestamp("2019-12-24", tz=UTC),  # Christmas Eve
-            pd.Timestamp("2019-12-25", tz=UTC),  # Christmas
-            pd.Timestamp("2019-12-30", tz=UTC),  # Rizal Day
-            pd.Timestamp("2019-12-31", tz=UTC),  # New Year's Eve
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        yield [
+            # 2019 +
+            "2019-01-01",  # New Year's Day
+            "2019-02-05",  # Chinese New Year
+            "2019-04-09",  # Araw Ng Kagitingan
+            "2019-04-18",  # Maundy Thursday
+            "2019-05-01",  # Labour Day
+            "2019-06-05",  # Eid al-Fitr
+            "2019-06-12",  # Independence Day
+            "2019-08-12",  # Eid al-Adha
+            "2019-08-21",  # Ninoy Aquino Day
+            "2019-08-26",  # National Heroes Day
+            "2017-09-01",  # Eid al-Adha
+            "2019-11-01",  # All Saint's Day
+            "2018-11-30",  # Bonifacio Day
+            "2019-12-24",  # Christmas Eve
+            "2019-12-25",  # Christmas
+            "2019-12-30",  # Rizal Day
+            "2019-12-31",  # New Year's Eve
+            #
+            # National Heroes' Day, last Monday of every August.
+            "2019-08-26",
+            "2018-08-27",
+            "2017-08-28",
+            "2016-08-29",
+            "2015-08-31",
+            "2014-08-25",
+            "2013-08-26",
+            "2012-08-27",
+            "2011-08-29",
         ]
 
-        for holiday_label in expected_holidays:
-            self.assertNotIn(holiday_label, all_sessions)
+    @pytest.fixture
+    def adhoc_holidays_sample(self):
+        yield [
+            # Holidays prior to 2011 are hard-coded for convenience. Below is a subset
+            # of these holidays (those for 2008) to verify they are being recognised.
+            "2008-01-01",
+            "2008-02-25",
+            "2008-03-20",
+            "2008-03-21",
+            "2008-04-07",
+            "2008-05-01",
+            "2008-06-09",
+            "2008-08-18",
+            "2008-08-25",
+            "2008-10-01",
+            "2008-12-01",
+            "2008-12-25",
+            "2008-12-26",
+            "2008-12-29",
+            "2008-12-30",
+            "2008-12-31",
+        ]
 
-    def test_holidays_fall_on_weekend(self):
-        all_sessions = self.calendar.all_sessions
-
-        # Holidays falling on weekends are not made up, so verify surrounding
-        # Friday/Monday are trading days.
-        expected_sessions = [
+    @pytest.fixture
+    def non_holidays_sample(self):
+        yield [
+            # Holidays that fall on a weekend and are not made up. Ensure surrounding
+            # days are not holidays.
             # New Year's Day on Sunday, Jan 1st.
             #  2011-12-30 is Rizal Day
-            pd.Timestamp("2011-12-29", tz=UTC),
-            pd.Timestamp("2012-01-02", tz=UTC),
+            "2011-12-29",
+            "2012-01-02",
             # Chinese New Year's on Saturday, Jan 28th.
-            pd.Timestamp("2017-01-27", tz=UTC),
-            pd.Timestamp("2017-01-30", tz=UTC),
+            "2017-01-27",
+            "2017-01-30",
             # Araw Ng Kagitingan on Sunday, Apr 9th.
-            pd.Timestamp("2017-04-07", tz=UTC),
-            pd.Timestamp("2017-04-10", tz=UTC),
+            "2017-04-07",
+            "2017-04-10",
             # Labour Day on Saturday, May 1st.
-            pd.Timestamp("2016-04-29", tz=UTC),
-            pd.Timestamp("2016-05-02", tz=UTC),
+            "2016-04-29",
+            "2016-05-02",
             # Independence Day on Sunday, Jun 12th.
-            pd.Timestamp("2016-06-10", tz=UTC),
-            pd.Timestamp("2016-06-13", tz=UTC),
+            "2016-06-10",
+            "2016-06-13",
             # Ninoy Aquino Day on Sunday, Aug 21st.
-            pd.Timestamp("2016-08-19", tz=UTC),
-            pd.Timestamp("2016-08-22", tz=UTC),
+            "2016-08-19",
+            "2016-08-22",
             # All Saint's Day on Sunday, Nov 1st.
-            pd.Timestamp("2015-10-30", tz=UTC),
-            pd.Timestamp("2015-11-02", tz=UTC),
+            "2015-10-30",
+            "2015-11-02",
             # Bonifacio Day on Saturday, Nov 30th.
-            pd.Timestamp("2019-11-29", tz=UTC),
-            pd.Timestamp("2019-12-02", tz=UTC),
+            "2019-11-29",
+            "2019-12-02",
             # Christmas Eve + Christmas Day on weekend.
-            pd.Timestamp("2011-12-23", tz=UTC),
-            pd.Timestamp("2011-12-26", tz=UTC),
+            "2011-12-23",
+            "2011-12-26",
             # Rizal Day + New Year's Eve on weekend.
             #  2018-01-01 and 2018-01-02 are both holidays.
-            pd.Timestamp("2017-12-29", tz=UTC),
-            pd.Timestamp("2018-01-03", tz=UTC),
+            "2017-12-29",
+            "2018-01-03",
         ]
-
-        for session_label in expected_sessions:
-            self.assertIn(session_label, all_sessions)
-
-    def test_national_heroes_day(self):
-        all_sessions = self.calendar.all_sessions
-
-        # National Heroes' Day takes place on the last Monday of every
-        # August. This test makes sure the last Monday of every August
-        # is a holiday.
-        expected_holidays = [
-            pd.Timestamp("2019-08-26", tz=UTC),
-            pd.Timestamp("2018-08-27", tz=UTC),
-            pd.Timestamp("2017-08-28", tz=UTC),
-            pd.Timestamp("2016-08-29", tz=UTC),
-            pd.Timestamp("2015-08-31", tz=UTC),
-            pd.Timestamp("2014-08-25", tz=UTC),
-            pd.Timestamp("2013-08-26", tz=UTC),
-            pd.Timestamp("2012-08-27", tz=UTC),
-            pd.Timestamp("2011-08-29", tz=UTC),
-        ]
-
-        for holiday_label in expected_holidays:
-            self.assertNotIn(holiday_label, all_sessions)
-
-    def test_2008_adhoc(self):
-        all_sessions = self.calendar.all_sessions
-
-        # For this calendar, all holidays prior to 2011 are hard-coded
-        # for convenience.  This test verifies that those holidays are
-        # working by checking a subset of them (all 2008 holidays).
-        expected_holidays = [
-            pd.Timestamp("2008-01-01", tz=UTC),
-            pd.Timestamp("2008-02-25", tz=UTC),
-            pd.Timestamp("2008-03-20", tz=UTC),
-            pd.Timestamp("2008-03-21", tz=UTC),
-            pd.Timestamp("2008-04-07", tz=UTC),
-            pd.Timestamp("2008-05-01", tz=UTC),
-            pd.Timestamp("2008-06-09", tz=UTC),
-            pd.Timestamp("2008-08-18", tz=UTC),
-            pd.Timestamp("2008-08-25", tz=UTC),
-            pd.Timestamp("2008-10-01", tz=UTC),
-            pd.Timestamp("2008-12-01", tz=UTC),
-            pd.Timestamp("2008-12-25", tz=UTC),
-            pd.Timestamp("2008-12-26", tz=UTC),
-            pd.Timestamp("2008-12-29", tz=UTC),
-            pd.Timestamp("2008-12-30", tz=UTC),
-            pd.Timestamp("2008-12-31", tz=UTC),
-        ]
-
-        for holiday_label in expected_holidays:
-            self.assertNotIn(holiday_label, all_sessions)
