@@ -1,7 +1,5 @@
-from unittest import TestCase
-
+import pytest
 import pandas as pd
-from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xtks import XTKSExchangeCalendar
 from exchange_calendars.exchange_calendar import SUNDAY, WEDNESDAY
@@ -14,79 +12,202 @@ from exchange_calendars.xtks_holidays import (
     GreeneryDay2007Onwards,
     RespectForTheAgedDay2003Onwards,
 )
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_utils import T
 
-from .test_exchange_calendar import ExchangeCalendarTestBase
+# NOTE: A couple of dedicated tests, and sanity tests in fixtures, test
+# holidays imported from xtks_holidays. These tests would probably be
+# better placed on a spearate test module, or at least to a separate
+# class on this module.
 
 
-class XTKSCalendarTestCase(ExchangeCalendarTestBase, TestCase):
+class TestXTKSCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XTKSExchangeCalendar
 
-    answer_key_filename = "xtks"
-    calendar_class = XTKSExchangeCalendar
+    @pytest.fixture
+    def max_session_hours(self):
+        yield 6
 
-    START_BOUND = pd.Timestamp("1997-01-01", tz="UTC")
-    MAX_SESSION_HOURS = 6
-    HAVE_EARLY_CLOSES = False
+    @pytest.fixture
+    def start_bound(self):
+        yield T("1997-01-01")
 
-    def test_2012(self):
-        expected_holidays_2012 = [
-            pd.Timestamp("2012-01-01", tz=UTC),  # New Year's holiday
-            pd.Timestamp("2012-01-02", tz=UTC),  # New Year's holiday
-            pd.Timestamp("2012-01-03", tz=UTC),  # New Year's holiday
-            pd.Timestamp("2012-01-09", tz=UTC),  # Coming of Age Day
-            # National Foundation Day was on a Saturday so it is ignored
-            pd.Timestamp("2012-03-20", tz=UTC),  # Vernal Equinox
-            pd.Timestamp("2012-04-30", tz=UTC),  # Showa Day Observed
-            pd.Timestamp("2012-05-03", tz=UTC),  # Constitution Memorial Day
-            pd.Timestamp("2012-05-04", tz=UTC),  # Greenery Day
-            # Children's Day was on a Saturday so it is ignored
-            pd.Timestamp("2012-07-16", tz=UTC),  # Marine Day
-            pd.Timestamp("2012-09-17", tz=UTC),  # Respect for the Aged Day
-            # The Autumnal Equinox was on a Saturday so it is ignored
-            pd.Timestamp("2012-10-08", tz=UTC),  # Health and Sports Day
-            # Culture Day was on a Saturday so it is ignored
-            pd.Timestamp("2012-11-23", tz=UTC),  # Labor Thanksgiving Day
-            pd.Timestamp("2012-12-24", tz=UTC),  # Emperor Birthday Observed
-            pd.Timestamp("2012-12-31", tz=UTC),  # New Year's holiday
-        ]
+    @pytest.fixture  # Calendar-specific fixture
+    def silver_week_holidays(self):
+        """List of pd.Timestamp representing Citizens Day and
+        Respect for the Aged Day holidays of silver week.
+        """
 
-        for session_label in expected_holidays_2012:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
+        def day_before(dt):
+            return dt - pd.Timedelta(days=1)
 
-    def test_golden_week(self):
-        # from 1997 to 2006 May 4 was an unnamed citizen's holiday because
-        # it was between Constitution Memorial Day and Children's Day
-        consitution_memorial_days = ConstitutionMemorialDay.dates(
-            "1997-01-01", "2007-01-01"
+        # Make sure that every Tuesday between Respect for the Aged Day and
+        # the Autumnal Equinox is a citizen's holiday
+        citizens_holidays = []
+        for equinox in AutumnalEquinoxes:
+            # It is unusual for September to get this extra holiday
+            # so the presence of a "silver week" was not widely noted before 2009
+            if equinox < pd.Timestamp("2009-01-01"):
+                continue
+            if equinox.dayofweek == WEDNESDAY:
+                citizens_holidays.append(day_before(equinox))
+
+        expected_citizens_holidays = CitizensHolidaySilverWeek
+        # NOTE: Tests of imported holidays should probably be on a separate test module.
+        assert citizens_holidays == expected_citizens_holidays  # Sanity check
+
+        respect_for_the_aged_days = RespectForTheAgedDay2003Onwards.dates(
+            "2003-01-01", AutumnalEquinoxes[-1]
         )
-        childrens_days = ChildrensDay.dates("1997-01-01", "2007-01-01")
 
+        rftad_holidays = []
+        for citizens_holiday in citizens_holidays:
+            # the day before the citizen's holiday should be Respect for the Aged Day.
+            respect_for_the_aged_day = day_before(citizens_holiday)
+            rftad_holidays.append(respect_for_the_aged_day)
+            # NOTE: Tests of imported holidays should probably be on a separate module.
+            assert respect_for_the_aged_day in respect_for_the_aged_days  # Sanity check
+
+        yield citizens_holidays + rftad_holidays
+
+    @pytest.fixture  # Calendar-specific fixture
+    def golden_week_holidays(self):
+        """List of pd.Timestamp representing citizen's holidays in Golden Week
+        prior to 2007.
+        """
+        # from 1997 to 2006 May 4 was an unnamed citizen's holiday between
+        # Constitution Memorial Day and Children's Day
+        start, end = "1997-01-01", "2007-01-01"
+        consitution_memorial_days = ConstitutionMemorialDay.dates(start, end)
+        childrens_days = ChildrensDay.dates(start, end)
+        citizens_days = []
         for cm_day, childrens_day in zip(consitution_memorial_days, childrens_days):
-
             # if there is only one day between Constitution Memorial
             # Day and Children's Day, that day should be a holiday
             if childrens_day - cm_day != pd.Timedelta(days=2):
                 continue
+            citizens_days.append(cm_day + pd.Timedelta(days=1))
+        yield citizens_days
 
-            citizens_holiday = cm_day + pd.Timedelta(days=1)
+    @pytest.fixture
+    def regular_holidays_sample(self, silver_week_holidays, golden_week_holidays):
+        by_year = [
+            # 2012
+            "2012-01-01",  # New Year's holiday
+            "2012-01-02",  # New Year's holiday
+            "2012-01-03",  # New Year's holiday
+            "2012-01-09",  # Coming of Age Day
+            # National Foundation Day was on a Saturday so it is ignored
+            "2012-03-20",  # Vernal Equinox
+            "2012-04-30",  # Showa Day Observed
+            "2012-05-03",  # Constitution Memorial Day
+            "2012-05-04",  # Greenery Day
+            # Children's Day was on a Saturday so it is ignored
+            "2012-07-16",  # Marine Day
+            "2012-09-17",  # Respect for the Aged Day
+            # The Autumnal Equinox was on a Saturday so it is ignored
+            "2012-10-08",  # Health and Sports Day
+            # Culture Day was on a Saturday so it is ignored
+            "2012-11-23",  # Labor Thanksgiving Day
+            "2012-12-24",  # Emperor Birthday Observed
+            "2012-12-31",  # New Year's holiday
+            #
+            # 2020
+            "2020-01-01",  # New Year's holiday
+            "2020-01-02",  # New Year's holiday
+            "2020-01-03",  # New Year's holiday
+            "2020-01-13",  # Coming of Age Day
+            "2020-02-11",  # National Foundation Day
+            "2020-02-23",  # Emperor's Birthday
+            "2020-02-24",  # Emperor's Birthday observed
+            "2020-03-20",  # Vernal Equinox
+            "2020-04-29",  # Showa Day
+            "2020-05-03",  # Constitution Memorial Day
+            "2020-05-04",  # Greenery Day
+            "2020-05-05",  # Children's Day
+            "2020-05-06",  # Constitution Memorial Day
+            # observed
+            "2020-07-23",  # Marine Day
+            "2020-07-24",  # Sports Day
+            "2020-08-10",  # Mountain Day
+            "2020-09-21",  # Respect for the Aged Day
+            "2020-09-22",  # Autumnal Equinox
+            "2020-11-03",  # Culture Day
+            "2020-11-23",  # Labor Thanksgiving Day
+            "2020-12-31",  # New Year's holiday
+            #
+            # 2021
+            "2021-01-01",  # New Year's Day
+            "2021-01-02",  # Market Holiday
+            "2021-01-03",  # Market Holiday
+            "2021-01-11",  # Coming of Age Day
+            "2021-02-11",  # National Foundation Day
+            "2021-02-23",  # Emperor's Birthday
+            "2021-03-20",  # Vernal Equinox
+            "2021-04-29",  # Showa Day
+            "2021-05-03",  # Constitution Memorial Day
+            "2021-05-04",  # Greenery Day
+            "2021-05-05",  # Children's Day
+            "2021-07-22",  # Marine Day
+            "2021-07-23",  # Sports Day
+            "2021-08-08",  # Mountain Day
+            "2021-08-09",  # Mountain Day observed
+            "2021-09-20",  # Respect for the Aged Day
+            "2021-09-23",  # Autumnal Equinox
+            "2021-11-03",  # Culture Day
+            "2021-11-23",  # Labor Thanksgiving Day
+            "2021-12-31",  # Market Holiday
+            #
+            # Mountain Day 11th August, observed from 2016.
+            "2016-08-11",
+            "2019-08-12",  # Falls on Sunday, made up on Monday.
+        ]
 
-            self.assertNotIn(cm_day, self.calendar.all_sessions)
-            self.assertNotIn(citizens_holiday, self.calendar.all_sessions)
-            self.assertNotIn(childrens_day, self.calendar.all_sessions)
+        others = silver_week_holidays + golden_week_holidays
+        others = [day.strftime("%Y-%m-%d") for day in others]
+
+        yield by_year + others
+
+    @pytest.fixture
+    def adhoc_holidays_sample(self):
+        yield [
+            # 2019
+            "2019-04-30",  # Abdication Day
+            "2019-05-01",  # Accession Day
+            "2019-05-02",  # Citizen's Holiday
+            "2019-10-22",  # Enthronment Ceremony
+            #
+            "2020-10-01",  # equity trading system failure
+        ]
+
+    @pytest.fixture
+    def non_holidays_sample(self):
+        yield [
+            "2015-08-11",  # Mountain Day not observed until to 2016.
+        ]
+
+    # Calendar-specific tests
+
+    def test_golden_week_holidays(self):
+        # NOTE: This tests imported holidays rather than the XTKS calendar.
+        # This test should probably be on a separate test module (together with other
+        # such tests here and the sanity checks within fixtures).
 
         # from 2007 onwards, Greenery Day was moved to May 4
-        consitution_memorial_days = ConstitutionMemorialDay.dates(
-            "2007-01-01", "2019-01-01"
-        )
-        greenery_days = GreeneryDay2007Onwards.dates("2007-01-01", "2019-01-01")
-        childrens_days = ChildrensDay.dates("2007-01-01", "2019-01-01")
+        start, end = "2007-01-01", "2019-01-01"
+        consitution_memorial_days = ConstitutionMemorialDay.dates(start, end)
+        greenery_days = GreeneryDay2007Onwards.dates(start, end)
+        childrens_days = ChildrensDay.dates(start, end)
 
         # In 2008, Greenery Day is on a Sunday, and Children's Day
         # is on a Monday, so Greenery Day should be observed on Tuesday
         #       May 2008
         # Su Mo Tu We Th Fr Sa
         #  4  5  6  7  8  9 10
-        self.assertIn(pd.Timestamp("2008-05-05"), childrens_days)
-        self.assertIn(pd.Timestamp("2008-05-06"), greenery_days)
+        assert pd.Timestamp("2008-05-05") in childrens_days
+        assert pd.Timestamp("2008-05-06") in greenery_days
 
         # In 2009, Consitution Memorial Day should be observed on Wednesday,
         # since it is the next weekday that is not a holiday
@@ -94,9 +215,9 @@ class XTKSCalendarTestCase(ExchangeCalendarTestBase, TestCase):
         # Su Mo Tu We Th Fr Sa
         #                 1  2
         #  3  4  5  6  7  8  9
-        self.assertIn(pd.Timestamp("2009-05-04"), greenery_days)
-        self.assertIn(pd.Timestamp("2009-05-05"), childrens_days)
-        self.assertIn(pd.Timestamp("2009-05-06"), consitution_memorial_days)
+        assert pd.Timestamp("2009-05-04") in greenery_days
+        assert pd.Timestamp("2009-05-05") in childrens_days
+        assert pd.Timestamp("2009-05-06") in consitution_memorial_days
 
         # In 2012, Children's Day should not be observed because it falls
         # on a Saturday
@@ -104,48 +225,21 @@ class XTKSCalendarTestCase(ExchangeCalendarTestBase, TestCase):
         # Su Mo Tu We Th Fr Sa
         #        1  2  3  4  5
         #  6  7  8  9 10 11 12
-        self.assertIn(pd.Timestamp("2012-05-03"), consitution_memorial_days)
-        self.assertIn(pd.Timestamp("2012-05-04"), greenery_days)
+        assert pd.Timestamp("2012-05-03") in consitution_memorial_days
+        assert pd.Timestamp("2012-05-04") in greenery_days
 
         # In 2013, May 3 and 6 should be a holiday
         #       May 2013
         # Su Mo Tu We Th Fr Sa
         #           1  2  3  4
         #  5  6  7  8  9 10 11
-        self.assertIn(pd.Timestamp("2013-05-03"), consitution_memorial_days)
-        self.assertIn(pd.Timestamp("2013-05-06"), childrens_days)
-
-    def test_silver_week(self):
-        def day_before(dt):
-            return dt - pd.Timedelta(days=1)
-
-        # Make sure that every Tuesday between Respect for the Aged Day and
-        # the Autumnal Equinox is also a holiday
-        silver_week_citizens_holidays = []
-        for equinox in AutumnalEquinoxes:
-            # It is unusual for September to get this extra holida
-            # so the presence of a "silver week" was not widely noted before 2009
-            if equinox < pd.Timestamp("2009-01-01"):
-                continue
-            if equinox.dayofweek == WEDNESDAY:
-                silver_week_citizens_holidays.append(day_before(equinox))
-
-        expected_silver_week_holidays = CitizensHolidaySilverWeek
-        self.assertEqual(silver_week_citizens_holidays, expected_silver_week_holidays)
-
-        respect_for_the_aged_days = RespectForTheAgedDay2003Onwards.dates(
-            "2003-01-01", AutumnalEquinoxes[-1]
-        )
-
-        for citizens_holiday in silver_week_citizens_holidays:
-            self.assertNotIn(citizens_holiday, self.calendar.all_sessions)
-            # the day before the citizen's holiday should be Respect
-            # for the Aged Day
-            respect_for_the_aged_day = day_before(citizens_holiday)
-            self.assertNotIn(respect_for_the_aged_day, self.calendar.all_sessions)
-            self.assertIn(respect_for_the_aged_day, respect_for_the_aged_days)
+        assert pd.Timestamp("2013-05-03") in consitution_memorial_days
+        assert pd.Timestamp("2013-05-06") in childrens_days
 
     def test_emperors_birthday(self):
+        # NOTE: This tests imported holidays rather than the XTKS calendar.
+        # This test should probably be on a separate test module (together with other
+        # such tests here and the sanity checks within fixtures).
 
         # The Emperor's birthday should be celebrated every year except
         # for 2019
@@ -155,101 +249,6 @@ class XTKSCalendarTestCase(ExchangeCalendarTestBase, TestCase):
             birthday = pd.Timestamp("{}-12-23".format(year))
             if birthday.dayofweek == SUNDAY:
                 birthday += pd.Timedelta(days=1)
+            assert birthday in expected_birthdays
 
-            self.assertIn(birthday, expected_birthdays)
-
-        self.assertNotIn(pd.Timestamp("2019-12-23"), expected_birthdays)
-
-    def test_mountain_day(self):
-        # Mountain Day was not celebrated prior to 2016.
-        self.assertIn(pd.Timestamp("2015-08-11"), self.calendar.all_sessions)
-
-        # First celebrated and observed in 2016.
-        self.assertNotIn(
-            pd.Timestamp("2016-08-11"),
-            self.calendar.all_sessions,
-        )
-
-        #     August 2019
-        # Su Mo Tu We Th Fr Sa
-        #              1  2  3
-        #  4  5  6  7  8  9 10
-        # 11 12 13 14 15 16 17
-        # 18 19 20 21 22 23 24
-        # 25 26 27 28 29 30 31
-        #
-        # Falls on a Sunday in 2019, so it is observed on Monday.
-        self.assertNotIn(
-            pd.Timestamp("2019-08-12"),
-            self.calendar.all_sessions,
-        )
-
-    def test_2019_adhocs(self):
-        # Check if adhoc holidays in 2019 are observed
-        expected_holidays = [
-            pd.Timestamp("2019-04-30", tz=UTC),  # Abdication Day
-            pd.Timestamp("2019-05-01", tz=UTC),  # Accession Day
-            pd.Timestamp("2019-05-02", tz=UTC),  # Citizen's Holiday
-            pd.Timestamp("2019-10-22", tz=UTC),  # Enthronment Ceremony
-        ]
-
-        for holiday_label in expected_holidays:
-            self.assertNotIn(holiday_label, self.calendar.all_sessions)
-
-    def test_2020(self):
-        expected_holidays_2020 = [
-            pd.Timestamp("2020-01-01", tz=UTC),  # New Year's holiday
-            pd.Timestamp("2020-01-02", tz=UTC),  # New Year's holiday
-            pd.Timestamp("2020-01-03", tz=UTC),  # New Year's holiday
-            pd.Timestamp("2020-01-13", tz=UTC),  # Coming of Age Day
-            pd.Timestamp("2020-02-11", tz=UTC),  # National Foundation Day
-            pd.Timestamp("2020-02-23", tz=UTC),  # Emperor's Birthday
-            pd.Timestamp("2020-02-24", tz=UTC),  # Emperor's Birthday observed
-            pd.Timestamp("2020-03-20", tz=UTC),  # Vernal Equinox
-            pd.Timestamp("2020-04-29", tz=UTC),  # Showa Day
-            pd.Timestamp("2020-05-03", tz=UTC),  # Constitution Memorial Day
-            pd.Timestamp("2020-05-04", tz=UTC),  # Greenery Day
-            pd.Timestamp("2020-05-05", tz=UTC),  # Children's Day
-            pd.Timestamp("2020-05-06", tz=UTC),  # Constitution Memorial Day
-            # observed
-            pd.Timestamp("2020-07-23", tz=UTC),  # Marine Day
-            pd.Timestamp("2020-07-24", tz=UTC),  # Sports Day
-            pd.Timestamp("2020-08-10", tz=UTC),  # Mountain Day
-            pd.Timestamp("2020-09-21", tz=UTC),  # Respect for the Aged Day
-            pd.Timestamp("2020-09-22", tz=UTC),  # Autumnal Equinox
-            pd.Timestamp("2020-11-03", tz=UTC),  # Culture Day
-            pd.Timestamp("2020-11-23", tz=UTC),  # Labor Thanksgiving Day
-            pd.Timestamp("2020-12-31", tz=UTC),  # New Year's holiday
-            # irregularities
-            pd.Timestamp("2020-10-01", tz=UTC),  # equity trading system failure
-        ]
-
-        for session_label in expected_holidays_2020:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
-
-    def test_2021(self):
-        expected_holidays_2021 = [
-            pd.Timestamp("2021-01-01", tz="UTC"),  # New Year's Day
-            pd.Timestamp("2021-01-02", tz="UTC"),  # Market Holiday
-            pd.Timestamp("2021-01-03", tz="UTC"),  # Market Holiday
-            pd.Timestamp("2021-01-11", tz="UTC"),  # Coming of Age Day
-            pd.Timestamp("2021-02-11", tz="UTC"),  # National Foundation Day
-            pd.Timestamp("2021-02-23", tz="UTC"),  # Emperor's Birthday
-            pd.Timestamp("2021-03-20", tz="UTC"),  # Vernal Equinox
-            pd.Timestamp("2021-04-29", tz="UTC"),  # Showa Day
-            pd.Timestamp("2021-05-03", tz="UTC"),  # Constitution Memorial Day
-            pd.Timestamp("2021-05-04", tz="UTC"),  # Greenery Day
-            pd.Timestamp("2021-05-05", tz="UTC"),  # Children's Day
-            pd.Timestamp("2021-07-22", tz="UTC"),  # Marine Day
-            pd.Timestamp("2021-07-23", tz="UTC"),  # Sports Day
-            pd.Timestamp("2021-08-08", tz="UTC"),  # Mountain Day
-            pd.Timestamp("2021-08-09", tz="UTC"),  # Mountain Day observed
-            pd.Timestamp("2021-09-20", tz="UTC"),  # Respect for the Aged Day
-            pd.Timestamp("2021-09-23", tz="UTC"),  # Autumnal Equinox
-            pd.Timestamp("2021-11-03", tz="UTC"),  # Culture Day
-            pd.Timestamp("2021-11-23", tz="UTC"),  # Labor Thanksgiving Day
-            pd.Timestamp("2021-12-31", tz="UTC"),  # Market Holiday
-        ]
-
-        for session_label in expected_holidays_2021:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
+        assert pd.Timestamp("2019-12-23") not in expected_birthdays

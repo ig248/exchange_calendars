@@ -1,49 +1,46 @@
-from unittest import TestCase
-
-import pandas as pd
-from pytz import UTC
+import pytest
 
 from exchange_calendars.exchange_calendar_xshg import XSHGExchangeCalendar
-
-from .test_exchange_calendar import ExchangeCalendarTestBase
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 from .test_utils import T
 
 
-class XSHGCalendarTestCase(ExchangeCalendarTestBase, TestCase):
+class TestXSHGCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XSHGExchangeCalendar
 
-    answer_key_filename = "xshg"
-    calendar_class = XSHGExchangeCalendar
+    @pytest.fixture
+    def max_session_hours(self):
+        # Shanghai stock exchange is open from 9:30 am to 3pm
+        yield 5.5
 
-    START_BOUND = T("1999-01-01")
-    END_BOUND = T("2025-12-31")
+    @pytest.fixture
+    def start_bound(self):
+        yield T("1999-01-01")
 
-    # Shanghai stock exchange is open from 9:30 am to 3pm
-    # (for now, ignoring lunch break)
-    MAX_SESSION_HOURS = 5.5
+    @pytest.fixture
+    def end_bound(self):
+        yield T("2025-12-31")
 
-    HAVE_EARLY_CLOSES = False
-
-    MINUTE_INDEX_TO_SESSION_LABELS_END = pd.Timestamp("2011-04-07", tz=UTC)
-
-    def test_normal_year(self):
-        expected_holidays_2017 = [
-            T("2017-01-02"),
-            T("2017-01-27"),
-            T("2017-01-30"),
-            T("2017-01-31"),
-            T("2017-02-01"),
-            T("2017-02-02"),
-            T("2017-04-03"),
-            T("2017-04-04"),
-            T("2017-05-01"),
-            T("2017-05-29"),
-            T("2017-05-30"),
-            T("2017-10-02"),
-            T("2017-10-03"),
-            T("2017-10-04"),
-            T("2017-10-05"),
-            T("2017-10-06"),
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        yield [
+            # 2017
+            "2017-01-02",
+            "2017-01-27",
+            "2017-01-30",
+            "2017-01-31",
+            "2017-02-01",
+            "2017-02-02",
+            "2017-04-03",
+            "2017-04-04",
+            "2017-05-01",
+            "2017-05-29",
+            "2017-05-30",
+            "2017-10-02",
+            "2017-10-03",
+            "2017-10-04",
+            "2017-10-05",
+            "2017-10-06",
         ]
-
-        for session_label in expected_holidays_2017:
-            self.assertNotIn(session_label, self.calendar.all_sessions)

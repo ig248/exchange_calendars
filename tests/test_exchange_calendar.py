@@ -3268,7 +3268,7 @@ class ExchangeCalendarTestBaseNew:
         TEST RELIES ON ACCURACY OF CALENDAR PROPERTIES `open_times` and
         `tz`. See `late_opens` fixture.
         """
-        tm.assert_index_equal(late_opens, default_calendar.late_opens)
+        tm.assert_index_equal(late_opens, default_calendar.late_opens.unique())
 
     def test_early_closes(self, default_calendar, early_closes):
         """Test early closes.
@@ -3278,7 +3278,7 @@ class ExchangeCalendarTestBaseNew:
         TEST RELIES ON ACCURACY OF CALENDAR PROPERTIES `close_times` and
         `tz`. See `early_closes` fixture.
         """
-        tm.assert_index_equal(early_closes, default_calendar.early_closes)
+        tm.assert_index_equal(early_closes, default_calendar.early_closes.unique())
 
     # Tests for methods that interrogate a given session.
 

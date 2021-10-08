@@ -1,38 +1,33 @@
-from unittest import TestCase
-
-import pandas as pd
-from pytz import UTC
+import pytest
 
 from exchange_calendars.exchange_calendar_xswx import XSWXExchangeCalendar
+from .test_exchange_calendar import ExchangeCalendarTestBaseNew
 
-from .test_exchange_calendar import ExchangeCalendarTestBase
 
+class TestIXSWXCalendar(ExchangeCalendarTestBaseNew):
+    @pytest.fixture(scope="class")
+    def calendar_cls(self):
+        yield XSWXExchangeCalendar
 
-class XSWXCalendarTestCase(ExchangeCalendarTestBase, TestCase):
+    @pytest.fixture
+    def max_session_hours(self):
+        # The XSWX is open from 9:00 am to 5:30 pm.
+        yield 8.5
 
-    answer_key_filename = "xswx"
-    calendar_class = XSWXExchangeCalendar
-
-    # The XSWX is open from 9:00 am to 5:30 pm.
-    MAX_SESSION_HOURS = 8.5
-
-    HAVE_EARLY_CLOSES = False
-
-    def test_2012(self):
-        expected_holidays_2012 = [
+    @pytest.fixture
+    def regular_holidays_sample(self):
+        yield [
+            # 2012
             # New Year's Day isn't observed because it was on a Sunday
-            pd.Timestamp("2012-01-02", tz=UTC),  # Berchtold's Day observed
-            pd.Timestamp("2012-04-06", tz=UTC),  # Good Friday
-            pd.Timestamp("2012-04-09", tz=UTC),  # Easter Monday
-            pd.Timestamp("2012-05-01", tz=UTC),  # Labour Day
-            pd.Timestamp("2012-05-17", tz=UTC),  # Ascension Day
-            pd.Timestamp("2012-05-28", tz=UTC),  # Whit Monday
-            pd.Timestamp("2012-08-01", tz=UTC),  # Swiss National Day
-            pd.Timestamp("2012-12-24", tz=UTC),  # Christmas Eve
-            pd.Timestamp("2012-12-25", tz=UTC),  # Christmas
-            pd.Timestamp("2012-12-26", tz=UTC),  # Boxing Day
-            pd.Timestamp("2012-12-31", tz=UTC),  # New Year's Eve
+            "2012-01-02",  # Berchtold's Day observed
+            "2012-04-06",  # Good Friday
+            "2012-04-09",  # Easter Monday
+            "2012-05-01",  # Labour Day
+            "2012-05-17",  # Ascension Day
+            "2012-05-28",  # Whit Monday
+            "2012-08-01",  # Swiss National Day
+            "2012-12-24",  # Christmas Eve
+            "2012-12-25",  # Christmas
+            "2012-12-26",  # Boxing Day
+            "2012-12-31",  # New Year's Eve
         ]
-
-        for session_label in expected_holidays_2012:
-            self.assertNotIn(session_label, self.calendar.all_sessions)
