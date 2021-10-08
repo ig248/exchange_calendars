@@ -11,7 +11,6 @@
 # limitations under the License.
 from __future__ import annotations
 from datetime import time
-from unittest import TestCase
 import typing
 import re
 import functools
@@ -22,7 +21,6 @@ from collections import abc
 import pytest
 import pandas as pd
 import pandas.testing as tm
-from parameterized import parameterized
 import pytz
 from pytz import UTC
 from toolz import concat
@@ -48,125 +46,125 @@ class FakeCalendar(ExchangeCalendar):
     close_times = ((None, time(11, 49)),)
 
 
-class CalendarRegistrationTestCase(TestCase):
-    def setup_method(self, method):
-        self.dummy_cal_type = FakeCalendar
-        self.dispatcher = ExchangeCalendarDispatcher({}, {}, {})
+class TestCalendarRegistration:
+    @pytest.fixture
+    def dispatcher(self) -> abc.Iterator[ExchangeCalendarDispatcher]:
+        dispatcher = ExchangeCalendarDispatcher({}, {}, {})
+        yield dispatcher
+        dispatcher.clear_calendars()
 
-    def teardown_method(self, method):
-        self.dispatcher.clear_calendars()
+    @pytest.fixture
+    def dummy_cal_type(self) -> abc.Iterator[typing.Type[FakeCalendar]]:
+        yield FakeCalendar
 
-    def test_register_calendar(self):
-        # Build a fake calendar
-        dummy_cal = self.dummy_cal_type()
+    @pytest.fixture
+    def dummy_cal(self, dummy_cal_type) -> abc.Iterator[FakeCalendar]:
+        yield dummy_cal_type()
 
-        # Try to register and retrieve the calendar
-        self.dispatcher.register_calendar("DMY", dummy_cal)
-        retr_cal = self.dispatcher.get_calendar("DMY")
-        self.assertEqual(dummy_cal, retr_cal)
+    def test_register_calendar(self, dispatcher, dummy_cal):
+        # Try to register and retrieve dummy calendar
+        dispatcher.register_calendar("DMY", dummy_cal)
+        retr_cal = dispatcher.get_calendar("DMY")
+        assert dummy_cal == retr_cal
 
         # Try to register again, expecting a name collision
-        with self.assertRaises(CalendarNameCollision):
-            self.dispatcher.register_calendar("DMY", dummy_cal)
+        with pytest.raises(CalendarNameCollision):
+            dispatcher.register_calendar("DMY", dummy_cal)
 
         # Deregister the calendar and ensure that it is removed
-        self.dispatcher.deregister_calendar("DMY")
-        with self.assertRaises(InvalidCalendarName):
-            self.dispatcher.get_calendar("DMY")
+        dispatcher.deregister_calendar("DMY")
+        with pytest.raises(InvalidCalendarName):
+            dispatcher.get_calendar("DMY")
 
-    def test_register_calendar_type(self):
-        self.dispatcher.register_calendar_type("DMY", self.dummy_cal_type)
-        retr_cal = self.dispatcher.get_calendar("DMY")
-        self.assertEqual(self.dummy_cal_type, type(retr_cal))
+    def test_register_calendar_type(self, dispatcher, dummy_cal_type):
+        dispatcher.register_calendar_type("DMY", dummy_cal_type)
+        retr_cal = dispatcher.get_calendar("DMY")
+        assert dummy_cal_type == type(retr_cal)
 
-    def test_both_places_are_checked(self):
-        dummy_cal = self.dummy_cal_type()
-
+    def test_both_places_are_checked(self, dispatcher, dummy_cal):
         # if instance is registered, can't register type with same name
-        self.dispatcher.register_calendar("DMY", dummy_cal)
-        with self.assertRaises(CalendarNameCollision):
-            self.dispatcher.register_calendar_type("DMY", type(dummy_cal))
+        dispatcher.register_calendar("DMY", dummy_cal)
+        with pytest.raises(CalendarNameCollision):
+            dispatcher.register_calendar_type("DMY", type(dummy_cal))
 
-        self.dispatcher.deregister_calendar("DMY")
+        dispatcher.deregister_calendar("DMY")
 
         # if type is registered, can't register instance with same name
-        self.dispatcher.register_calendar_type("DMY", type(dummy_cal))
+        dispatcher.register_calendar_type("DMY", type(dummy_cal))
 
-        with self.assertRaises(CalendarNameCollision):
-            self.dispatcher.register_calendar("DMY", dummy_cal)
+        with pytest.raises(CalendarNameCollision):
+            dispatcher.register_calendar("DMY", dummy_cal)
 
-    def test_force_registration(self):
-        self.dispatcher.register_calendar("DMY", self.dummy_cal_type())
-        first_dummy = self.dispatcher.get_calendar("DMY")
+    def test_force_registration(self, dispatcher, dummy_cal_type):
+        dispatcher.register_calendar("DMY", dummy_cal_type())
+        first_dummy = dispatcher.get_calendar("DMY")
 
         # force-register a new instance
-        self.dispatcher.register_calendar("DMY", self.dummy_cal_type(), force=True)
+        dispatcher.register_calendar("DMY", dummy_cal_type(), force=True)
 
-        second_dummy = self.dispatcher.get_calendar("DMY")
+        second_dummy = dispatcher.get_calendar("DMY")
 
-        self.assertNotEqual(first_dummy, second_dummy)
-
-
-class DefaultsTestCase(TestCase):
-    def test_default_calendars(self):
-        dispatcher = ExchangeCalendarDispatcher(
-            calendars={},
-            calendar_factories=_default_calendar_factories,
-            aliases=_default_calendar_aliases,
-        )
-
-        # These are ordered aliases first, so that we can deregister the
-        # canonical factories when we're done with them, and we'll be done with
-        # them after they've been used by all aliases and by canonical name.
-        for name in concat([_default_calendar_aliases, _default_calendar_factories]):
-            self.assertIsNotNone(
-                dispatcher.get_calendar(name), "get_calendar(%r) returned None" % name
-            )
-            dispatcher.deregister_calendar(name)
+        assert first_dummy != second_dummy
 
 
-class DaysAtTimeTestCase(TestCase):
-    @parameterized.expand(
-        [
-            # NYSE standard day
-            (
-                "2016-07-19",
-                0,
-                time(9, 31),
-                pytz.timezone("America/New_York"),
-                "2016-07-19 9:31",
-            ),
-            # CME standard day
-            (
-                "2016-07-19",
-                -1,
-                time(17, 1),
-                pytz.timezone("America/Chicago"),
-                "2016-07-18 17:01",
-            ),
-            # CME day after DST start
-            (
-                "2004-04-05",
-                -1,
-                time(17, 1),
-                pytz.timezone("America/Chicago"),
-                "2004-04-04 17:01",
-            ),
-            # ICE day after DST start
-            (
-                "1990-04-02",
-                -1,
-                time(19, 1),
-                pytz.timezone("America/Chicago"),
-                "1990-04-01 19:01",
-            ),
-        ]
+def test_default_calendars():
+    dispatcher = ExchangeCalendarDispatcher(
+        calendars={},
+        calendar_factories=_default_calendar_factories,
+        aliases=_default_calendar_aliases,
     )
-    def test_days_at_time(self, day, day_offset, time_offset, tz, expected):
-        days = pd.DatetimeIndex([pd.Timestamp(day, tz=tz)])
-        result = days_at_time(days, time_offset, tz, day_offset)[0]
-        expected = pd.Timestamp(expected, tz=tz).tz_convert(UTC)
-        self.assertEqual(result, expected)
+    # These are ordered aliases first, so that we can deregister the
+    # canonical factories when we're done with them, and we'll be done with
+    # them after they've been used by all aliases and by canonical name.
+    for name in concat([_default_calendar_aliases, _default_calendar_factories]):
+        assert (
+            dispatcher.get_calendar(name) is not None
+        ), f"get_calendar({name}) returned None"
+        dispatcher.deregister_calendar(name)
+
+
+@pytest.mark.parametrize(
+    "day, day_offset, time_offset, tz, expected",
+    [
+        # NYSE standard day
+        (
+            "2016-07-19",
+            0,
+            time(9, 31),
+            pytz.timezone("America/New_York"),
+            "2016-07-19 9:31",
+        ),
+        # CME standard day
+        (
+            "2016-07-19",
+            -1,
+            time(17, 1),
+            pytz.timezone("America/Chicago"),
+            "2016-07-18 17:01",
+        ),
+        # CME day after DST start
+        (
+            "2004-04-05",
+            -1,
+            time(17, 1),
+            pytz.timezone("America/Chicago"),
+            "2004-04-04 17:01",
+        ),
+        # ICE day after DST start
+        (
+            "1990-04-02",
+            -1,
+            time(19, 1),
+            pytz.timezone("America/Chicago"),
+            "1990-04-01 19:01",
+        ),
+    ],
+)
+def test_days_at_time(day, day_offset, time_offset, tz, expected):
+    days = pd.DatetimeIndex([pd.Timestamp(day, tz=tz)])
+    result = days_at_time(days, time_offset, tz, day_offset)[0]
+    expected = pd.Timestamp(expected, tz=tz).tz_convert(UTC)
+    assert result == expected
 
 
 def get_csv(name: str) -> pd.DataFrame:

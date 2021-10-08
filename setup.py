@@ -79,7 +79,6 @@ if __name__ == "__main__":
                 "flake8",
                 "pytest",
                 "pytest-benchmark",
-                "parameterized",
                 "pytest-xdist",
                 "pip-tools",
             ],
