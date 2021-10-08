@@ -2,10 +2,10 @@ import pandas as pd
 import pytest
 
 from exchange_calendars.exchange_calendar_asex import ASEXExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 
 
-class TestASEXCalendar(ExchangeCalendarTestBaseNew):
+class TestASEXCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield ASEXExchangeCalendar

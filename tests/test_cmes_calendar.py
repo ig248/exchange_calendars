@@ -2,10 +2,10 @@ import pytest
 import pandas as pd
 
 from exchange_calendars.exchange_calendar_cmes import CMESExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 
 
-class TestCMESCalendar(ExchangeCalendarTestBaseNew):
+class TestCMESCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class", params=["left", "right"])
     def all_calendars_with_answers(self, request, calendars, answers):
         yield (calendars[request.param], answers[request.param])

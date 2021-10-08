@@ -3,11 +3,11 @@ import pandas as pd
 from pytz import UTC
 
 from exchange_calendars.exchange_calendar_xsgo import XSGOExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 from .test_utils import T
 
 
-class TestXSGOCalendar(ExchangeCalendarTestBaseNew):
+class TestXSGOCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield XSGOExchangeCalendar

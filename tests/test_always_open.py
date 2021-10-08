@@ -4,10 +4,10 @@ import pandas.testing as tm
 from pytz import UTC
 
 from exchange_calendars.always_open import AlwaysOpenCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 
 
-class TestAlwaysOpenCalendar(ExchangeCalendarTestBaseNew):
+class TestAlwaysOpenCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class", params=["left", "right"])
     def all_calendars_with_answers(self, request, calendars, answers):
         yield (calendars[request.param], answers[request.param])

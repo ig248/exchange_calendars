@@ -12,7 +12,7 @@ from exchange_calendars.xtks_holidays import (
     GreeneryDay2007Onwards,
     RespectForTheAgedDay2003Onwards,
 )
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 from .test_utils import T
 
 # NOTE: A couple of dedicated tests, and sanity tests in fixtures, test
@@ -21,7 +21,7 @@ from .test_utils import T
 # class on this module.
 
 
-class TestXTKSCalendar(ExchangeCalendarTestBaseNew):
+class TestXTKSCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield XTKSExchangeCalendar

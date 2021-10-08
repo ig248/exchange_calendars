@@ -1,10 +1,10 @@
 import pytest
 
 from exchange_calendars.exchange_calendar_xlim import XLIMExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 
 
-class TestXLIMCalendar(ExchangeCalendarTestBaseNew):
+class TestXLIMCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield XLIMExchangeCalendar

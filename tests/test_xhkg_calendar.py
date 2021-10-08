@@ -2,11 +2,11 @@ import pytest
 import pandas as pd
 
 from exchange_calendars.exchange_calendar_xhkg import XHKGExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 from .test_utils import T
 
 
-class TestXHKGCalendar(ExchangeCalendarTestBaseNew):
+class TestXHKGCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield XHKGExchangeCalendar

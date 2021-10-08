@@ -4,10 +4,10 @@ import pandas.testing as tm
 from pytz import UTC
 
 from exchange_calendars.weekday_calendar import WeekdayCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 
 
-class TestWeekdayCalendar(ExchangeCalendarTestBaseNew):
+class TestWeekdayCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class", params=["left", "right"])
     def all_calendars_with_answers(self, request, calendars, answers):
         yield (calendars[request.param], answers[request.param])

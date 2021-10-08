@@ -1,11 +1,11 @@
 import pytest
 
 from exchange_calendars.exchange_calendar_xses import XSESExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 from .test_utils import T
 
 
-class TestXSESCalendar(ExchangeCalendarTestBaseNew):
+class TestXSESCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield XSESExchangeCalendar

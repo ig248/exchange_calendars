@@ -1,10 +1,10 @@
 import pytest
 
 from exchange_calendars.exchange_calendar_xbkk import XBKKExchangeCalendar
-from .test_exchange_calendar import ExchangeCalendarTestBaseNew
+from .test_exchange_calendar import ExchangeCalendarTestBase
 
 
-class TestXBKKCalendar(ExchangeCalendarTestBaseNew):
+class TestXBKKCalendar(ExchangeCalendarTestBase):
     @pytest.fixture(scope="class")
     def calendar_cls(self):
         yield XBKKExchangeCalendar
