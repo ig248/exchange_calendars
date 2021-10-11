@@ -1553,20 +1553,25 @@ class ExchangeCalendarTestBase:
         `test_regular_holidays_sample` will check that each date does not
         represent a calendar session.
 
-        Example return:
+        Typical test cases:
+            - All regular holidays over a full calendar year.
+            - First observance of a regular holiday which started being
+                observed from a specific year.
+            - Last observance of a regular holiday that ceased to be
+                observed from a specific year.
+            - Where a regular holiday falls on a weekend and is made up on
+                a prior Friday or following Monday, verify that holiday
+                is made up on that day.
+            - Verify bridge days fall as expected (i.e. verify Mondays or
+                Fridays that are recognised holidays due to a regular
+                bridged holiday falling on a Tuesday or Thursday
+                respectively).
+            - Verify unusual rules, for example if a holiday is only
+                observed if it falls on a Monday, check that holiday is
+                observed when it falls on a Monday.
+
+        Example yield:
             ["2020-12-25", "2021-01-01", ...]
-        """
-        yield []
-
-    @pytest.fixture
-    def adhoc_holidays_sample(self) -> abc.Iterator[list[str]]:
-        """Sample of adhoc calendar holidays. Empty list if no adhoc holidays.
-
-        `test_adhoc_holidays_sample` will check that each date does not
-        represent a calendar session.
-
-        Example return:
-            ["2015-04-17", "2021-09-12", ...]
         """
         yield []
 
@@ -1581,8 +1586,48 @@ class ExchangeCalendarTestBase:
         example where a session is an exception to a rule, or where session
         preceeds/follows a holiday that is an exception to a rule.
 
+        Typical test cases:
+            - Final non-observance of a regular holiday that began
+                to be observed in a subsequent year, i.e. verify still
+                being treated as a non-holiday in this year.
+            - First non-observance of a regular holiday that ceased
+                to be observed in a prior year, i.e. verify now being
+                treated as a non-holiday in this year.
+            - Verify the first trading day following a made up holiday(s)
+                is not a holiday. For example, where a two-day holiday
+                falls over a Saturaday and Sunday, and is made up on the
+                subsequent Monday and Tuesday, verify that the Wednesday is
+                not a holiday.
+            - For holidays that fall on a weekend and are not made up,
+                test that the Friday/Monday are not holidays (i.e. verify
+                that the regular holiday is not being made up.)
+            - When a non-bridged regular holiday falls on Tuesday/Thursday,
+                verify that the prior/subsequent Monday/Friday is not a
+                holiday.
+            - Verify an irregular non-observance of a regular holiday.
+            - Verify unusual rules, for example if a holiday is only
+                observed if it falls on a Monday, check that holiday is
+                not observed when falls on other days.
+
         Example return:
             ["2019-12-27", "2020-01-02", ...]
+        """
+        yield []
+
+    @pytest.fixture
+    def adhoc_holidays_sample(self) -> abc.Iterator[list[str]]:
+        """Sample of adhoc calendar holidays. Empty list if no adhoc holidays.
+
+        `test_adhoc_holidays_sample` will check that each date does not
+        represent a calendar session.
+
+        Typical test cases:
+            - Closures that were not planned. For example, due to weather,
+                system errors etc.
+            - One-off holidays.
+
+        Example return:
+            ["2015-04-17", "2021-09-12", ...]
         """
         yield []
 
@@ -1592,6 +1637,13 @@ class ExchangeCalendarTestBase:
 
         `test_late_opens_sample` will check that each date represents a
         session with a late open.
+
+        Typical test cases:
+            - All regular late opens over a year.
+            - First observance of a regular late open that started being
+                observed from a specific year.
+            - Last observance of a regular late open that ceased to be
+                observed from a specific year.
 
         Example returns:
             ["2022-01-03", "2022-04-22", ...]
@@ -1604,6 +1656,14 @@ class ExchangeCalendarTestBase:
 
         `test_early_closes_sample` will check that each date represents a
         session with an early close.
+
+        Typical test cases:
+            - All regular early opens over a year.
+            - First observance of a regular early close that started being
+                observed from a specific year.
+            - Last observance of a regular early close that ceased to be
+                observed from a specific year.
+            - Any adhoc early closes.
 
         Example returns:
             ["2019-12-24", "2019-12-31", ...]
@@ -1640,6 +1700,16 @@ class ExchangeCalendarTestBase:
 
         Subclass should use this fixture to test edge cases, for example
         where an otherwise early close is an exception to a rule.
+
+        Typical test cases:
+            - Where an early close is observed from a certain year, verify
+                that the closest prior year, for which the early close
+                would have been otherwise observed, was not an early
+                close.
+            - Where an early close ceases to be observed from a certain
+                year, verify that the closest following year, for which the
+                early close would have been otherwse observed, is not an
+                early close.
 
         Example return:
             ["2022-12-23", "2022-12-30]
