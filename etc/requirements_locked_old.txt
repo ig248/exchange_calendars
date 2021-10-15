@@ -20,9 +20,12 @@ flake8==3.8.4
     # via -r requirements_dev.in
 iniconfig==1.1.1
     # via pytest
+hypothesis==6.23.2
+    # 2021-10-15 - manually added.
 mccabe==0.6.1
     # via flake8
-numpy==1.19.5
+numpy==1.20
+    # 2021-10-15 - manually bumped from 1.19.5 to 1.20, originally...
     # via
     #   -r requirements.in
     #   pandas
@@ -30,7 +33,7 @@ packaging==20.8
     # via pytest
 pandas==1.1.0
     # via -r requirements.in
-parameterized==0.8.1
+# parameterized==0.8.1  # 2021-10-15 - manually removed.
     # via -r requirements_dev.in
 pip-tools==5.5.0
     # via -r requirements_dev.in
@@ -72,6 +75,8 @@ pytz==2020.5
     #   pandas
 six==1.15.0
     # via python-dateutil
+sortedcontainers==2.4.0
+    # 2021-10-15 - manually added, dependency of hypothesis
 toml==0.10.2
     # via pytest
 toolz==0.11.1
