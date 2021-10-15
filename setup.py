@@ -81,6 +81,7 @@ if __name__ == "__main__":
                 "pytest-benchmark",
                 "pytest-xdist",
                 "pip-tools",
+                "hypothesis",
             ],
         },
     )
