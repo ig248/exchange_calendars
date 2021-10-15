@@ -22,7 +22,8 @@ iniconfig==1.1.1
     # via pytest
 mccabe==0.6.1
     # via flake8
-numpy==1.19.5
+numpy==1.20
+    # 2021-10-15 - manually bumped from 1.19.5 to 1.20, originally...
     # via
     #   -r requirements.in
     #   pandas
