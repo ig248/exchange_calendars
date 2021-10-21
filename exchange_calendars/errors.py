@@ -219,7 +219,7 @@ class NotTradingMinuteError(ValueError):
             f"Parameter `{self.param_name}` takes a trading minute although"
             f" received input that parsed to '{self.minute}' which"
         )
-        if self.minute < self.calendar.first_trading_minute:
+        if self.minute < self.calendar.first_minute:
             msg += (
                 " is earlier than the first trading minute of calendar"
                 f" '{self.calendar.name}' ('{self.calendar.first_session}')."
@@ -260,20 +260,20 @@ class MinuteOutOfBounds(ValueError):
 
     def __str__(self) -> str:
         msg = f"Parameter `{self.param_name}` receieved as '{self.minute}' although"
-        if self.minute < self.calendar.first_trading_minute:
+        if self.minute < self.calendar.first_minute:
             msg += (
                 " cannot be earlier than the first trading minute of calendar"
-                f" '{self.calendar.name}' ('{self.calendar.first_trading_minute}')."
+                f" '{self.calendar.name}' ('{self.calendar.first_minute}')."
             )
-        elif self.minute > self.calendar.last_trading_minute:
+        elif self.minute > self.calendar.last_minute:
             msg += (
                 " cannot be later than the last trading minute of calendar"
-                f" '{self.calendar.name}' ('{self.calendar.last_trading_minute}')."
+                f" '{self.calendar.name}' ('{self.calendar.last_minute}')."
             )
         else:
             assert (
-                self.minute < self.calendar.first_trading_minute
-                or self.minute > self.calendar.last_trading_minute
+                self.minute < self.calendar.first_minute
+                or self.minute > self.calendar.last_minute
             )
         return msg
 
@@ -325,9 +325,7 @@ class RequestedMinuteOutOfBounds(ValueError):
         self.calendar = calendar
         self.adverb = "before" if too_early else "after"
         self.position = "first" if too_early else "last"
-        self.bound = (
-            calendar.first_trading_minute if too_early else calendar.last_trading_minute
-        )
+        self.bound = calendar.first_minute if too_early else calendar.last_minute
 
     def __str__(self) -> str:
         return (
